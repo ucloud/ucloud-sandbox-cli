@@ -1,4 +1,4 @@
-from e2b import AsyncTemplate
+from ucloud_sandbox import AsyncTemplate
 
 template = (
     AsyncTemplate()

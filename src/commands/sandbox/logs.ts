@@ -6,7 +6,7 @@ import * as chalk from 'chalk'
 import { client, connectionConfig } from 'src/api'
 import { asBold, asTimestamp, withUnderline } from 'src/utils/format'
 import { wait } from 'src/utils/wait'
-import { handleE2BRequestError } from '../../utils/errors'
+import { handleSandboxRequestError } from '../../utils/errors'
 import { waitForSandboxEnd, formatEnum, Format, isRunning } from './utils'
 
 enum LogLevel {
@@ -257,7 +257,7 @@ export async function listSandboxLogs({
     },
   })
 
-  handleE2BRequestError(res, 'Error while getting sandbox logs')
+  handleSandboxRequestError(res, 'Error while getting sandbox logs')
 
   return res.data.logs
 }

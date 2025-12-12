@@ -18,15 +18,15 @@ export async function buildWithProxy(
 ) {
   if (!userConfig?.dockerProxySet) {
     console.log(
-      'There was an issue during Docker authentication. Please follow the workaround steps from https://e2b.dev/docs/troubleshooting/templates/build-authentication-error and then continue.'
+      'There was an issue during Docker authentication. Please follow the workaround steps from https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error and then continue.'
     )
     const yes = await confirm(
-      'Have you completed the steps from the https://e2b.dev/docs/troubleshooting/templates/build-authentication-error workaround guide?'
+      'Have you completed the steps from the https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error workaround guide?'
     )
 
     if (!yes) {
       console.log(
-        'Please follow the workaround steps from https://e2b.dev/docs/troubleshooting/templates/build-authentication-error and then try again.'
+        'Please follow the workaround steps from https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error and then try again.'
       )
       process.exit(1)
     }
@@ -39,7 +39,7 @@ export async function buildWithProxy(
   })
 
   const accessTokenBase64Encoded = Buffer.from(
-    `_e2b_access_token:${accessToken}`
+    `_sandbox_access_token:${accessToken}`
   ).toString('base64')
 
   const proxyServer = await proxy(
@@ -75,7 +75,7 @@ async function docker(
   let success = false
 
   child_process.execSync(
-    `docker tag docker.${connectionConfig.domain}/e2b/custom-envs/${template.templateID}:${template.buildID} ${localDomain}:${PORT}/e2b/custom-envs/${template.templateID}:${template.buildID}`,
+    `docker tag docker.${connectionConfig.domain}/sandbox/custom-envs/${template.templateID}:${template.buildID} ${localDomain}:${PORT}/sandbox/custom-envs/${template.templateID}:${template.buildID}`,
     {
       stdio: 'inherit',
       cwd: root,
@@ -91,7 +91,7 @@ async function docker(
     'docker',
     [
       'push',
-      `${localDomain}:${PORT}/e2b/custom-envs/${template.templateID}:${template.buildID}`,
+      `${localDomain}:${PORT}/sandbox/custom-envs/${template.templateID}:${template.buildID}`,
     ],
     {
       detached: true,
@@ -124,7 +124,7 @@ async function proxy(
   proxyStarted: (value: unknown) => void
 ) {
   const res = await fetch(
-    `https://docker.${connectionConfig.domain}/v2/token?account=_e2b_access_token&scope=repository%3Ae2b%2Fcustom-envs%2F${template.templateID}%3Apush%2Cpull`,
+    `https://docker.${connectionConfig.domain}/v2/token?account=_sandbox_access_token&scope=repository%3Asandbox%2Fcustom-envs%2F${template.templateID}%3Apush%2Cpull`,
     {
       method: 'GET',
       headers: {

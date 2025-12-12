@@ -1,4 +1,4 @@
-import { Template } from 'e2b'
+import { Template } from 'ucloud_sandbox'
 
 export const template = Template()
   .fromImage('alpine:latest')

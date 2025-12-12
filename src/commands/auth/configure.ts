@@ -12,7 +12,7 @@ import {
   ensureUserConfig,
 } from 'src/api'
 import { asBold, asFormattedTeam } from '../../utils/format'
-import { handleE2BRequestError } from '../../utils/errors'
+import { handleSandboxRequestError } from '../../utils/errors'
 
 export const configureCommand = new commander.Command('configure')
   .description('configure user')
@@ -22,7 +22,7 @@ export const configureCommand = new commander.Command('configure')
     console.log('Configuring user...\n')
 
     if (!fs.existsSync(USER_CONFIG_PATH)) {
-      console.log('No user config found, run `e2b auth login` to log in first.')
+      console.log('No user config found, run `ucloud-sandbox-cli auth login` to log in first.')
       return
     }
 
@@ -32,7 +32,7 @@ export const configureCommand = new commander.Command('configure')
 
     const res = await client.api.GET('/teams', { signal })
 
-    handleE2BRequestError(res, 'Error getting teams')
+    handleSandboxRequestError(res, 'Error getting teams')
 
     const team = (
       await inquirer.default.prompt([

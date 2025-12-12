@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: {
     alias: {
       src: path.resolve(__dirname, './src'),
+      e2b: path.resolve(__dirname, './packages/js-sdk/src/index.ts'),
     },
   },
 })

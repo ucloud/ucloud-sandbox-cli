@@ -1,4 +1,4 @@
-from e2b import Template
+from ucloud_sandbox import Template
 
 template = (
     Template()

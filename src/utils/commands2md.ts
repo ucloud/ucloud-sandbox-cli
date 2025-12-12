@@ -23,13 +23,13 @@ export function commands2md(commands: Command[]): void {
     const fullName = parentName ? `${parentName} ${commandName}` : commandName
 
     const mdStructure = [
-      { h2: `e2b ${fullName}` },
+      { h2: `ucloud-sandbox-cli ${fullName}` },
       { p: command.description() },
       { h3: 'Usage' },
       {
         code: {
           language: 'bash',
-          content: `e2b ${fullName} ${command.usage()}`,
+          content: `ucloud-sandbox-cli ${fullName} ${command.usage()}`,
         },
       },
       ...(command.options.length > 0

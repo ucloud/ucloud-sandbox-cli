@@ -35,7 +35,7 @@ export function createCommand(
       ) => {
         if (deprecated) {
           console.warn(
-            `Warning: The '${name}' command is deprecated and will be removed in future releases. Please use 'e2b sandbox create' instead.`
+            `Warning: The '${name}' command is deprecated and will be removed in future releases. Please use 'ucloud-sandbox-cli sandbox create' instead.`
           )
         }
         try {

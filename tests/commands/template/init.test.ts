@@ -11,7 +11,7 @@ describe('Template Init', () => {
 
   beforeEach(async () => {
     // Use Node.js built-in temp directory handling
-    testDir = await fs.mkdtemp('e2b-init-test-')
+    testDir = await fs.mkdtemp('sandbox-init-test-')
   })
 
   afterEach(async () => {
@@ -154,8 +154,8 @@ describe('Template Init', () => {
         await fs.readFile(packageJsonPath, 'utf8')
       )
 
-      expect(updatedPackageJson.scripts).toHaveProperty('e2b:build:dev')
-      expect(updatedPackageJson.scripts).toHaveProperty('e2b:build:prod')
+      expect(updatedPackageJson.scripts).toHaveProperty('sandbox:build:dev')
+      expect(updatedPackageJson.scripts).toHaveProperty('sandbox:build:prod')
       expect(updatedPackageJson.scripts.test).toBe('echo "test"') // existing script preserved
     })
 
@@ -181,8 +181,8 @@ describe('Template Init', () => {
         await fs.readFile(path.join(templateDir, 'package.json'), 'utf8')
       )
 
-      expect(createdPackageJSON.scripts).toHaveProperty('e2b:build:dev')
-      expect(createdPackageJSON.scripts).toHaveProperty('e2b:build:prod')
+      expect(createdPackageJSON.scripts).toHaveProperty('sandbox:build:dev')
+      expect(createdPackageJSON.scripts).toHaveProperty('sandbox:build:prod')
     })
   })
 
@@ -206,8 +206,8 @@ build/%:
       // Verify Makefile was updated (it should remain in the parent directory)
       const updatedMakefile = await fs.readFile(makefilePath, 'utf8')
 
-      expect(updatedMakefile).toContain('e2b:build:dev')
-      expect(updatedMakefile).toContain('e2b:build:prod')
+      expect(updatedMakefile).toContain('sandbox:build:dev')
+      expect(updatedMakefile).toContain('sandbox:build:prod')
       expect(updatedMakefile).toContain(`.PHONY: build
 build/%:
 \tCGO_ENABLED=1 go build`) // existing script preserved
@@ -235,8 +235,8 @@ build/%:
         path.join(templateDir, 'Makefile'),
         'utf8'
       )
-      expect(createdMakefile).toContain('e2b:build:dev')
-      expect(createdMakefile).toContain('e2b:build:prod')
+      expect(createdMakefile).toContain('sandbox:build:dev')
+      expect(createdMakefile).toContain('sandbox:build:prod')
     })
   })
 
@@ -254,10 +254,10 @@ build/%:
       )
 
       // Verify basic structure
-      expect(templateContent).toContain("import { Template } from 'e2b'")
+      expect(templateContent).toContain("import { Template } from 'ucloud_sandbox'")
       expect(templateContent).toContain('export const template = Template()')
       expect(templateContent).toContain('fromImage')
-      expect(templateContent).toContain('e2bdev/base')
+      expect(templateContent).toContain('sandbox/base')
     })
 
     test('should generate correct Python template content', async () => {
@@ -273,11 +273,11 @@ build/%:
       )
 
       // Verify basic structure
-      expect(templateContent).toContain('from e2b import Template')
+      expect(templateContent).toContain('from ucloud_sandbox import Template')
       expect(templateContent).toContain('template = (')
       expect(templateContent).toContain('Template()')
       expect(templateContent).toContain('from_image')
-      expect(templateContent).toContain('e2bdev/base')
+      expect(templateContent).toContain('sandbox/base')
     })
 
     test('should generate correct async Python template content', async () => {
@@ -292,7 +292,7 @@ build/%:
       )
 
       // Verify async structure
-      expect(templateContent).toContain('from e2b import AsyncTemplate')
+      expect(templateContent).toContain('from ucloud_sandbox import AsyncTemplate')
       expect(templateContent).toContain('AsyncTemplate()')
     })
   })

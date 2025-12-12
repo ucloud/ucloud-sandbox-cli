@@ -6,22 +6,22 @@ import * as path from 'path'
 
 import { asFormattedSandboxTemplate, asLocalRelative } from 'src/utils/format'
 
-export const configName = 'e2b.toml'
+export const configName = 'sandbox.toml'
 
-function getConfigHeader(config: E2BConfig) {
+function getConfigHeader(config: SandboxConfig) {
   return `# This is a config for UCloud Sandbox template.
 # You can use template ID (${config.template_id}) ${config.template_name ? `or template name (${config.template_name}) ` : ''
     }to create a sandbox:
 
 # Python SDK
-# from uagentbox import Sandbox, AsyncSandbox
+# from ucloud_sandbox import Sandbox, AsyncSandbox
 # sandbox = Sandbox.create("${config.template_name || config.template_id
     }") # Sync sandbox
 # sandbox = await AsyncSandbox.create("${config.template_name || config.template_id
     }") # Async sandbox
 
 # JS SDK
-# import { Sandbox } from 'uagentbox'
+# import { Sandbox } from 'ucloud_sandbox'
 # const sandbox = await Sandbox.create('${config.template_name || config.template_id
     }')
 
@@ -39,7 +39,7 @@ export const configSchema = yup.object({
   team_id: yup.string().optional(),
 })
 
-export type E2BConfig = yup.InferType<typeof configSchema>
+export type SandboxConfig = yup.InferType<typeof configSchema>
 
 interface Migration {
   from: string
@@ -78,12 +78,12 @@ export async function loadConfig(configPath: string) {
   const config = toml.parse(tomlRaw)
   const migratedConfig = applyMigrations(config, migrations)
 
-  return (await configSchema.validate(migratedConfig)) as E2BConfig
+  return (await configSchema.validate(migratedConfig)) as SandboxConfig
 }
 
 export async function saveConfig(
   configPath: string,
-  config: E2BConfig,
+  config: SandboxConfig,
   overwrite?: boolean
 ) {
   try {

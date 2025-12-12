@@ -28,7 +28,7 @@ test('api_url defaults correctly', () => {
   delete process.env.E2B_DEBUG
 
   const config = new ConnectionConfig()
-  assert.equal(config.apiUrl, 'https://api.e2b.app')
+  assert.equal(config.apiUrl, 'https://api.sandbox.ucloudai.com')
 })
 
 test('api_url in args', () => {

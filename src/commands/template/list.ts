@@ -6,7 +6,7 @@ import { listAliases } from '../../utils/format'
 import { sortTemplatesAliases } from 'src/utils/templateSort'
 import { client, ensureAccessToken } from 'src/api'
 import { teamOption } from '../../options'
-import { handleE2BRequestError } from '../../utils/errors'
+import { handleSandboxRequestError } from '../../utils/errors'
 import { getUserConfig } from '../../user'
 
 export const listCommand = new commander.Command('list')
@@ -124,6 +124,6 @@ export async function listSandboxTemplates({
     },
   })
 
-  handleE2BRequestError(templates, 'Error getting templates')
+  handleSandboxRequestError(templates, 'Error getting templates')
   return templates.data
 }
