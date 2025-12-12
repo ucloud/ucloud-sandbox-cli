@@ -16,8 +16,8 @@ export interface UserConfig {
 
 export const USER_CONFIG_PATH = path.join(os.homedir(), '.ucloud-sandbox-cli', 'config.json')
 export const DOCS_BASE =
-  process.env.E2B_DOCS_BASE ||
-  `https://${process.env.E2B_DOMAIN || 'sandbox.ucloudai.com'}/docs`
+  process.env.UCLOUD_SANDBOX_DOCS_BASE ||
+  `https://${process.env.UCLOUD_SANDBOX_DOMAIN || 'sandbox.ucloudai.com'}/docs`
 
 export function getUserConfig(): UserConfig | null {
   if (!fs.existsSync(USER_CONFIG_PATH)) return null
