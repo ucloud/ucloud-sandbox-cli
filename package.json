@@ -10,7 +10,7 @@
   "bugs": "https://github.com/ucloud/ucloud-sandbox-cli/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ucloud/ucloud-sandbox-cli",
+    "url": "git+https://github.com/ucloud/ucloud-sandbox-cli.git",
     "directory": "packages/cli"
   },
   "publishConfig": {
