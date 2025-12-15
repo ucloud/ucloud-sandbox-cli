@@ -15,6 +15,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: ucloud-sandbox-cli
 
     steps:
       - name: Checkout
