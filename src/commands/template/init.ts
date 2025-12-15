@@ -27,7 +27,9 @@ async function generateTemplateFiles(
   cpuCount?: number,
   memoryMB?: number
 ): Promise<GeneratedFiles> {
-  const template = Template().fromBaseImage().runCmd('echo Hello World E2B!')
+  const template = Template()
+    .fromImage('sandbox/base')
+    .runCmd('echo Hello World Sandbox!')
 
   return generateAndWriteTemplateFiles(
     root,
@@ -57,12 +59,12 @@ async function addMakefileScripts(
     }
 
     const makefileContent = `
-.PHONY: e2b:build:dev
-e2b:build:dev:
+.PHONY: sandbox:build:dev
+sandbox:build:dev:
 \t${cdPrefix}python ${files.buildDevFile}
 
-.PHONY: e2b:build:prod
-e2b:build:prod:
+.PHONY: sandbox:build:prod
+sandbox:build:prod:
 \t${cdPrefix}python ${files.buildProdFile}
 `
 
@@ -77,10 +79,10 @@ e2b:build:prod:
 
     console.log('\n📝 Added build scripts to Makefile:')
     console.log(
-      `   ${asPrimary('make e2b:build:dev')} - Build development template`
+      `   ${asPrimary('make sandbox:build:dev')} - Build development template`
     )
     console.log(
-      `   ${asPrimary('make e2b:build:prod')} - Build production template`
+      `   ${asPrimary('make sandbox:build:prod')} - Build production template`
     )
   } catch (err) {
     console.warn(
@@ -114,8 +116,8 @@ async function addPackageJsonScripts(
     pkgJson.update({
       scripts: {
         ...pkgJson.content.scripts,
-        'e2b:build:dev': `${cdPrefix}npx tsx ${files.buildDevFile}`,
-        'e2b:build:prod': `${cdPrefix}npx tsx ${files.buildProdFile}`,
+        'sandbox:build:dev': `${cdPrefix}npx tsx ${files.buildDevFile}`,
+        'sandbox:build:prod': `${cdPrefix}npx tsx ${files.buildProdFile}`,
       },
     })
 
@@ -124,10 +126,10 @@ async function addPackageJsonScripts(
 
     console.log('\n📝 Added build scripts to package.json:')
     console.log(
-      `   ${asPrimary('npm run e2b:build:dev')} - Build development template`
+      `   ${asPrimary('npm run sandbox:build:dev')} - Build development template`
     )
     console.log(
-      `   ${asPrimary('npm run e2b:build:prod')} - Build production template`
+      `   ${asPrimary('npm run sandbox:build:prod')} - Build production template`
     )
   } catch (err) {
     console.warn(
@@ -293,25 +295,25 @@ export const initCommand = new commander.Command('init')
         switch (language) {
           case Language.TypeScript:
             console.log(
-              `   ${asPrimary('npm install e2b')} (install e2b dependency)`
+              `   ${asPrimary('npm install ucloud_sandbox')} (install SDK dependency)`
             )
             console.log(
-              `   ${asPrimary('npm run e2b:build:dev')} (for development)`
+              `   ${asPrimary('npm run sandbox:build:dev')} (for development)`
             )
             console.log(
-              `   ${asPrimary('npm run e2b:build:prod')} (for production)`
+              `   ${asPrimary('npm run sandbox:build:prod')} (for production)`
             )
             break
           case Language.PythonAsync:
           case Language.PythonSync:
             console.log(
-              `   ${asPrimary('pip install e2b')} (install e2b dependency)`
+              `   ${asPrimary('pip install ucloud_sandbox')} (install SDK dependency)`
             )
             console.log(
-              `   ${asPrimary('make e2b:build:dev')} (for development)`
+              `   ${asPrimary('make sandbox:build:dev')} (for development)`
             )
             console.log(
-              `   ${asPrimary('make e2b:build:prod')} (for production)`
+              `   ${asPrimary('make sandbox:build:prod')} (for production)`
             )
             break
           default:
@@ -320,7 +322,7 @@ export const initCommand = new commander.Command('init')
 
         console.log(
           `\nLearn more about Sandbox Templates: ${asPrimary(
-            'https://e2b.dev/docs'
+            'https://sandbox.ucloudai.com/docs'
           )}\n`
         )
       } catch (err: any) {

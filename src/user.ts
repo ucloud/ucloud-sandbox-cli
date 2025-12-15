@@ -3,7 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 
 /**
- * User configuration stored in ~/.e2b/config.json
+ * User configuration stored in ~/.ucloud-sandbox-cli/config.json
  */
 export interface UserConfig {
   email: string

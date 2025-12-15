@@ -12,7 +12,7 @@ export const pathOption = new commander.Option(
 export const configOption = new commander.Option(
   '--config <config-toml>',
   `specify path to the config toml. By default tries to find ${asBold(
-    './e2b.toml'
+    './sandbox.toml'
   )} in root directory.`
 )
 

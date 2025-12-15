@@ -1,4 +1,4 @@
-from e2b import Template, default_build_logger
+from ucloud_sandbox import Template, default_build_logger
 from .template import template
 
 

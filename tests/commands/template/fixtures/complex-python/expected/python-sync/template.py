@@ -1,4 +1,4 @@
-from e2b import Template
+from ucloud_sandbox import Template
 
 template = (
     Template()
@@ -15,6 +15,5 @@ template = (
     .copy("requirements.txt", ".")
     .run_cmd("pip install --upgrade pip && pip install -r requirements.txt")
     .copy("app.py", ".")
-    .set_user("appuser")
-    .set_start_cmd("sudo gunicorn --bind 0.0.0.0:8000 app:application", "sleep 20")
+    .set_user("user")
 )

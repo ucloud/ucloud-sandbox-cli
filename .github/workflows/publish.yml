@@ -49,7 +49,7 @@ jobs:
 
       - name: Publish to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_JS_AUTH }}
         run: npm publish
 
       - name: Commit and push version update

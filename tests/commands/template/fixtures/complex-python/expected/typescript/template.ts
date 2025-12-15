@@ -1,4 +1,4 @@
-import { Template } from 'e2b'
+import { Template } from 'ucloud_sandbox'
 
 export const template = Template()
   .fromImage('python:3.11-slim')
@@ -14,5 +14,4 @@ export const template = Template()
   .copy('requirements.txt', '.')
   .runCmd('pip install --upgrade pip && pip install -r requirements.txt')
   .copy('app.py', '.')
-  .setUser('appuser')
-  .setStartCmd('sudo gunicorn --bind 0.0.0.0:8000 app:application', 'sleep 20')
+  .setUser('user')

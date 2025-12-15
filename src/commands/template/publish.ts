@@ -15,13 +15,13 @@ import {
   selectMultipleOption,
   teamOption,
 } from 'src/options'
-import { configName, E2BConfig, getConfigPath, loadConfig } from 'src/config'
+import { configName, SandboxConfig, getConfigPath, loadConfig } from 'src/config'
 import { getRoot } from 'src/utils/filesystem'
 import { listSandboxTemplates } from './list'
 import { getPromptTemplates } from 'src/utils/templatePrompt'
 import { confirm } from 'src/utils/confirm'
 import { client } from 'src/api'
-import { handleE2BRequestError } from '../../utils/errors'
+import { handleSandboxRequestError } from '../../utils/errors'
 import { getUserConfig } from 'src/user'
 
 async function publishTemplate(templateID: string, publish: boolean) {
@@ -36,7 +36,7 @@ async function publishTemplate(templateID: string, publish: boolean) {
     },
   })
 
-  handleE2BRequestError(
+  handleSandboxRequestError(
     res,
     `Error ${publish ? 'publishing' : 'unpublishing'} sandbox template`
   )
@@ -59,7 +59,7 @@ async function templateAction(
 
     const root = getRoot(opts.path)
 
-    const templates: (Pick<E2BConfig, 'template_id'> & {
+    const templates: (Pick<SandboxConfig, 'template_id'> & {
       configPath?: string
     })[] = []
 
@@ -195,7 +195,7 @@ export const publishCommand = new commander.Command('publish')
     )} to publish it. If you dont specify ${asBold(
       '[template]'
     )} the command will try to publish sandbox template defined by ${asLocal(
-      'e2b.toml'
+      configName
     )}.`
   )
   .addOption(pathOption)
@@ -215,7 +215,7 @@ export const unPublishCommand = new commander.Command('unpublish')
     )} to unpublish it. If you don't specify ${asBold(
       '[template]'
     )} the command will try to unpublish sandbox template defined by ${asLocal(
-      'e2b.toml'
+      configName
     )}.`
   )
   .addOption(pathOption)

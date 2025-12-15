@@ -13,7 +13,7 @@
 <img width="100%" src="/readme-assets/preview.png" alt="Cover image">
 --->
 ## What is E2B?
-[E2B](https://www.e2b.dev/) is an open-source infrastructure that allows you to run AI-generated code in secure isolated sandboxes in the cloud. To start and control sandboxes, use our [JavaScript SDK](https://www.npmjs.com/package/@e2b/code-interpreter) or [Python SDK](https://pypi.org/project/e2b_code_interpreter).
+[E2B](https://sandbox.ucloudai.com/) is an open-source infrastructure that allows you to run AI-generated code in secure isolated sandboxes in the cloud. To start and control sandboxes, use our JavaScript SDK or Python SDK.
 
 ## Run your first Sandbox
 
@@ -24,8 +24,8 @@ npm i @e2b/code-interpreter
 ```
 
 ### 2. Get your E2B API key
-1. Sign up to E2B [here](https://e2b.dev).
-2. Get your API key [here](https://e2b.dev/dashboard?tab=keys).
+1. Sign up to UCloud Sandbox [here](https://sandbox.ucloudai.com).
+2. Get your API key [here](https://console.ucloud.cn/modelverse/experience/api-keys).
 3. Set environment variable with your API key
 ```
 E2B_API_KEY=e2b_***
@@ -44,7 +44,7 @@ console.log(execution.text)  // outputs 2
 ```
 
 ### 4. Check docs
-Visit [E2B documentation](https://e2b.dev/docs).
+Visit [UCloud Sandbox documentation](https://sandbox.ucloudai.com/docs).
 
 ### 5. E2B cookbook
 Visit our [Cookbook](https://github.com/e2b-dev/e2b-cookbook/tree/main) to get inspired by examples with different LLMs and AI frameworks.
