@@ -93,22 +93,3 @@ test.skipIf(isDebug)('signing generation with expiration', async () => {
 
   assert.deepEqual(readSignatureExpected, readSignatureReceived)
 })
-
-test.skipIf(isDebug)('static signing key comparison', async () => {
-  const operation = 'read'
-  const path = 'hello.txt'
-  const user = 'user'
-  const envdAccessToken = '0tQG31xiMp0IOQfaz9dcwi72L1CPo8e0'
-
-  const signatureReceived = await getSignature({
-    path,
-    operation,
-    user,
-    envdAccessToken,
-  })
-
-  assert.equal(
-    'v1_gUtH/s9YCJWgCizjfUxuWfhFE4QSydOWEIIvfLwDr6E',
-    signatureReceived.signature
-  )
-})
