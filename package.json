@@ -1,8 +1,8 @@
 {
-  "name": "ucloud-sandbox-cli",
+  "name": "@ucloud-sdks/ucloud-sandbox-cli",
   "version": "0.1.0",
   "description": "CLI for managing UCloud sandbox templates",
-  "homepage": "https://sandbox.ucloudai.com",
+  "homepage": "https://ucloud.cn",
   "license": "MIT",
   "author": {
     "name": "jason.mei"
