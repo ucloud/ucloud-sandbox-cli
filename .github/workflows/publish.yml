@@ -1,12 +1,9 @@
 name: Publish to NPM
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "发布版本号 (例如: 1.0.0)"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -23,6 +20,20 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          # Get tag from release event or use ref for workflow_dispatch
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -46,7 +57,7 @@ jobs:
         run: pnpm build
 
       - name: Update version
-        run: npm version ${{ github.event.inputs.version }} --no-git-tag-version --allow-same-version
+        run: npm version ${{ steps.get_version.outputs.VERSION }} --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
         env:
@@ -58,5 +69,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git diff --staged --quiet || git commit -m "chore: bump version to ${{ github.event.inputs.version }}"
+          git diff --staged --quiet || git commit -m "chore: bump version to ${{ steps.get_version.outputs.VERSION }}"
           git push origin HEAD:main
