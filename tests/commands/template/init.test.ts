@@ -257,7 +257,7 @@ build/%:
       expect(templateContent).toContain("import { Template } from 'ucloud_sandbox'")
       expect(templateContent).toContain('export const template = Template()')
       expect(templateContent).toContain('fromImage')
-      expect(templateContent).toContain('sandbox/base')
+      expect(templateContent).toContain('uhub.service.ucloud.cn/agentbox/e2bdev/base:latest')
     })
 
     test('should generate correct Python template content', async () => {
@@ -277,7 +277,7 @@ build/%:
       expect(templateContent).toContain('template = (')
       expect(templateContent).toContain('Template()')
       expect(templateContent).toContain('from_image')
-      expect(templateContent).toContain('sandbox/base')
+      expect(templateContent).toContain('uhub.service.ucloud.cn/agentbox/e2bdev/base:latest')
     })
 
     test('should generate correct async Python template content', async () => {

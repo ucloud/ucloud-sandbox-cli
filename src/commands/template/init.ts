@@ -28,7 +28,7 @@ async function generateTemplateFiles(
   memoryMB?: number
 ): Promise<GeneratedFiles> {
   const template = Template()
-    .fromImage('sandbox/base')
+    .fromImage('uhub.service.ucloud.cn/agentbox/e2bdev/base:latest')
     .runCmd('echo Hello World Sandbox!')
 
   return generateAndWriteTemplateFiles(
@@ -258,10 +258,13 @@ export const initCommand = new commander.Command('init')
         await fs.promises.mkdir(templateDir, { recursive: true })
 
         // Step 4: Generate template and build files in the template directory
+        // Default to 2 CPU cores and 2GB memory (2048 MB)
         const generatedFiles = await generateTemplateFiles(
           templateDir,
           templateName,
-          language
+          language,
+          2,    // cpuCount: 2 cores
+          2048  // memoryMB: 2GB
         )
 
         // Step 5: Add scripts
