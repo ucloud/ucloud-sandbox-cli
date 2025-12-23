@@ -4,18 +4,18 @@ import * as e2b from 'e2b'
 import { getUserConfig, UserConfig } from './user'
 import { asBold, asPrimary } from './utils/format'
 
-export let apiKey = process.env.UCLOUD_SANDBOX_API_KEY
-export let accessToken = process.env.UCLOUD_SANDBOX_ACCESS_TOKEN
+export let apiKey = process.env.AGENTBOX_API_KEY
+export let accessToken = process.env.AGENTBOX_ACCESS_TOKEN
 
 const authErrorBox = (keyName: string) => {
   let link
   let msg
   switch (keyName) {
-    case 'UCLOUD_SANDBOX_API_KEY':
+    case 'AGENTBOX_API_KEY':
       link = 'https://console.ucloud.cn/modelverse/experience/api-keys'
       msg = 'API key'
       break
-    case 'UCLOUD_SANDBOX_ACCESS_TOKEN':
+    case 'AGENTBOX_ACCESS_TOKEN':
       link = 'https://console.ucloud.cn/modelverse/experience/api-keys'
       msg = 'access token'
       break
@@ -51,7 +51,7 @@ export function ensureAPIKey() {
   }
 
   if (!apiKey) {
-    console.error(authErrorBox('UCLOUD_SANDBOX_API_KEY'))
+    console.error(authErrorBox('AGENTBOX_API_KEY'))
     process.exit(1)
   } else {
     return apiKey
@@ -75,7 +75,7 @@ export function ensureAccessToken() {
   }
 
   if (!accessToken) {
-    console.error(authErrorBox('UCLOUD_SANDBOX_API_KEY'))
+    console.error(authErrorBox('AGENTBOX_API_KEY'))
     process.exit(1)
   } else {
     return accessToken
@@ -85,8 +85,8 @@ export function ensureAccessToken() {
 const userConfig = getUserConfig()
 
 export const connectionConfig = new e2b.ConnectionConfig({
-  accessToken: process.env.UCLOUD_SANDBOX_ACCESS_TOKEN || userConfig?.accessToken,
-  apiKey: process.env.UCLOUD_SANDBOX_API_KEY || userConfig?.teamApiKey,
+  accessToken: process.env.AGENTBOX_ACCESS_TOKEN || userConfig?.accessToken,
+  apiKey: process.env.AGENTBOX_API_KEY || userConfig?.teamApiKey,
   domain: process.env.UCLOUD_SANDBOX_DOMAIN || 'sandbox.ucloudai.com',
   apiUrl: process.env.UCLOUD_SANDBOX_API_URL || 'https://api.sandbox.ucloudai.com',
 })
