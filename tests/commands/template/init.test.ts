@@ -258,6 +258,21 @@ build/%:
       expect(templateContent).toContain('export const template = Template()')
       expect(templateContent).toContain('fromImage')
       expect(templateContent).toContain('uhub.service.ucloud.cn/agentbox/e2bdev/base:latest')
+
+      // Verify build files contain default CPU and memory settings (2c 2g)
+      const buildDevContent = await fs.readFile(
+        path.join(templateDir, 'build.dev.ts'),
+        'utf8'
+      )
+      expect(buildDevContent).toContain('cpuCount: 2')
+      expect(buildDevContent).toContain('memoryMB: 2048')
+
+      const buildProdContent = await fs.readFile(
+        path.join(templateDir, 'build.prod.ts'),
+        'utf8'
+      )
+      expect(buildProdContent).toContain('cpuCount: 2')
+      expect(buildProdContent).toContain('memoryMB: 2048')
     })
 
     test('should generate correct Python template content', async () => {
