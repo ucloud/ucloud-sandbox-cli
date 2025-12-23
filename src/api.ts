@@ -70,6 +70,10 @@ export function ensureUserConfig(): UserConfig {
 export function ensureAccessToken() {
   // If accessToken is not already set (either from env var or from user config), try to get it from config file
   if (!accessToken) {
+    // Also check AGENTBOX_API_KEY as fallback for AGENTBOX_ACCESS_TOKEN
+    accessToken = process.env.AGENTBOX_API_KEY
+  }
+  if (!accessToken) {
     const userConfig = getUserConfig()
     accessToken = userConfig?.accessToken || userConfig?.teamApiKey
   }
