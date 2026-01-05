@@ -11,6 +11,11 @@ import {
   formatSandboxTimeoutError,
   AuthenticationError,
 } from '../errors'
+import {
+  appendTraceIdToMessage,
+  createTraceIdMiddleware,
+  getTraceIdFromResponse,
+} from '../trace'
 import { StartResponse, ConnectResponse } from './process/process_pb'
 import { Code, ConnectError } from '@connectrpc/connect'
 import { WatchDirResponse } from './filesystem/filesystem_pb'
@@ -25,29 +30,46 @@ export async function handleEnvdApiError(res: {
     return
   }
 
+  const traceId = getTraceIdFromResponse(res.response)
+
   const message: string =
     typeof res.error == 'string'
       ? res.error
       : res.error?.message || (await res.response.text())
 
+  let err: Error
   switch (res.response.status) {
     case 400:
-      return new InvalidArgumentError(message)
+      err = new InvalidArgumentError(message)
+      break
     case 401:
-      return new AuthenticationError(message)
+      err = new AuthenticationError(message)
+      break
     case 404:
-      return new NotFoundError(message)
+      err = new NotFoundError(message)
+      break
     case 429:
-      return new SandboxError(
-        `${res.response.status}: ${message}: The requests are being rate limited.`
+      err = new SandboxError(
+        appendTraceIdToMessage(
+          `${res.response.status}: ${message}: The requests are being rate limited.`,
+          traceId
+        )
       )
+      break
     case 502:
-      return formatSandboxTimeoutError(message)
+      err = formatSandboxTimeoutError(message)
+      break
     case 507:
-      return new NotEnoughSpaceError(message)
+      err = new NotEnoughSpaceError(message)
+      break
     default:
-      return new SandboxError(`${res.response.status}: ${message}`)
+      err = new SandboxError(`${res.response.status}: ${message}`)
+      break
   }
+
+  err.message = appendTraceIdToMessage(err.message, traceId)
+  ;(err as any).traceId = traceId
+  return err
 }
 
 export async function handleProcessStartEvent(
@@ -116,6 +138,8 @@ class EnvdApiClient {
       // keepalive: true, // TODO: Return keepalive
     })
     this.version = metadata.version
+
+    this.api.use(createTraceIdMiddleware())
 
     if (config.logger) {
       this.api.use(createApiLogger(config.logger))

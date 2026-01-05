@@ -5,6 +5,11 @@ import { defaultHeaders } from './metadata'
 import { ConnectionConfig } from '../connectionConfig'
 import { AuthenticationError, RateLimitError, SandboxError } from '../errors'
 import { createApiLogger } from '../logs'
+import {
+  appendTraceIdToMessage,
+  createTraceIdMiddleware,
+  getTraceIdFromResponse,
+} from '../trace'
 
 export function handleApiError(
   response: FetchResponse<any, any, any>,
@@ -18,14 +23,22 @@ export function handleApiError(
     return
   }
 
+  const traceId = getTraceIdFromResponse(response.response)
+
   if (response.response.status === 401) {
     const message = 'Unauthorized, please check your credentials.'
     const content = response.error?.message ?? response.error
 
     if (content) {
-      return new AuthenticationError(`${message} - ${content}`)
+      const err = new AuthenticationError(
+        appendTraceIdToMessage(`${message} - ${content}`, traceId)
+      )
+      ;(err as any).traceId = traceId
+      return err
     }
-    return new AuthenticationError(message)
+    const err = new AuthenticationError(appendTraceIdToMessage(message, traceId))
+    ;(err as any).traceId = traceId
+    return err
   }
 
   if (response.response.status === 429) {
@@ -33,13 +46,24 @@ export function handleApiError(
     const content = response.error?.message ?? response.error
 
     if (content) {
-      return new RateLimitError(`${message} - ${content}`)
+      const err = new RateLimitError(
+        appendTraceIdToMessage(`${message} - ${content}`, traceId)
+      )
+      ;(err as any).traceId = traceId
+      return err
     }
-    return new RateLimitError(message)
+    const err = new RateLimitError(appendTraceIdToMessage(message, traceId))
+    ;(err as any).traceId = traceId
+    return err
   }
 
   const message = response.error?.message ?? response.error
-  return new errorClass(`${response.response.status}: ${message}`, stackTrace)
+  const err = new errorClass(
+    appendTraceIdToMessage(`${response.response.status}: ${message}`, traceId),
+    stackTrace
+  )
+  ;(err as any).traceId = traceId
+  return err
 }
 
 /**
@@ -85,6 +109,8 @@ class ApiClient {
         },
       },
     })
+
+    this.api.use(createTraceIdMiddleware())
 
     if (config.logger) {
       this.api.use(createApiLogger(config.logger))

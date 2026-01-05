@@ -43,3 +43,4 @@ build/Release
 logs.txt
 /dist
 /files
+.ace-tool/

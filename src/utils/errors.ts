@@ -14,12 +14,16 @@ export function handleSandboxRequestError<T>(
   res: {
     data?: T | null | undefined
     error?: { code: number; message: string }
+    response?: Response
   },
   errMsg?: string
 ): asserts res is { data: T; error?: undefined } {
   if (!res.error) {
     return
   }
+
+  const traceId = res.response?.headers?.get?.('x-trace-id') ?? undefined
+  const traceInfo = traceId ? `\nX-Trace-ID: ${traceId}` : ''
 
   let message: string
   const code = res.error?.code ?? 0
@@ -47,6 +51,6 @@ export function handleSandboxRequestError<T>(
   throw new SandboxRequestError(
     `${errMsg && `${errMsg}: `}[${code}] ${message && `${message}: `}${
       res.error?.message ?? 'no message'
-    }`
+    }${traceInfo}`
   )
 }

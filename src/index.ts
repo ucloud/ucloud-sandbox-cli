@@ -2,6 +2,7 @@
 
 import updateNotifier from 'update-notifier'
 import * as commander from 'commander'
+import { getLastTraceId } from 'e2b'
 import * as packageJSON from '../package.json'
 import { program } from './commands'
 import { commands2md } from './utils/commands2md'
@@ -18,6 +19,13 @@ const prog = program.version(
   undefined,
   'display UCloud Sandbox CLI version'
 )
+
+if (process.argv.includes('--debug')) {
+  process.on('exit', () => {
+    const traceId = getLastTraceId()
+    console.error(`[DEBUG] Trace ID: ${traceId ?? '(not available)'}`)
+  })
+}
 
 if (process.env.NODE_ENV === 'development') {
   prog

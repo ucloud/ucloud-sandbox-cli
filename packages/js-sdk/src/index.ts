@@ -16,6 +16,7 @@ export {
   FileUploadError,
 } from './errors'
 export type { Logger } from './logs'
+export { getLastTraceId } from './trace'
 
 export { getSignature } from './sandbox/signature'
 

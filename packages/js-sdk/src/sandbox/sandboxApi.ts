@@ -6,6 +6,7 @@ import {
 } from '../connectionConfig'
 import { compareVersions } from 'compare-versions'
 import { NotFoundError, TemplateError } from '../errors'
+import { appendTraceIdToMessage, getTraceIdFromResponse } from '../trace'
 import { timeoutToSeconds } from '../utils'
 import type { McpServer as BaseMcpServer } from './mcp'
 
@@ -432,7 +433,10 @@ export class SandboxApi {
     })
 
     if (res.error?.code === 404) {
-      throw new NotFoundError(`Sandbox ${sandboxId} not found`)
+      const traceId = getTraceIdFromResponse(res.response)
+      throw new NotFoundError(
+        appendTraceIdToMessage(`Sandbox ${sandboxId} not found`, traceId)
+      )
     }
 
     const err = handleApiError(res)
@@ -455,7 +459,10 @@ export class SandboxApi {
     })
 
     if (res.error?.code === 404) {
-      throw new NotFoundError(`Sandbox ${sandboxId} not found`)
+      const traceId = getTraceIdFromResponse(res.response)
+      throw new NotFoundError(
+        appendTraceIdToMessage(`Sandbox ${sandboxId} not found`, traceId)
+      )
     }
 
     const err = handleApiError(res)
@@ -508,7 +515,10 @@ export class SandboxApi {
     })
 
     if (res.error?.code === 404) {
-      throw new NotFoundError(`Sandbox ${sandboxId} not found`)
+      const traceId = getTraceIdFromResponse(res.response)
+      throw new NotFoundError(
+        appendTraceIdToMessage(`Sandbox ${sandboxId} not found`, traceId)
+      )
     }
 
     if (res.error?.code === 409) {
@@ -591,7 +601,13 @@ export class SandboxApi {
     })
 
     if (res.error?.code === 404) {
-      throw new NotFoundError(`Paused sandbox ${sandboxId} not found`)
+      const traceId = getTraceIdFromResponse(res.response)
+      throw new NotFoundError(
+        appendTraceIdToMessage(
+          `Paused sandbox ${sandboxId} not found`,
+          traceId
+        )
+      )
     }
 
     const err = handleApiError(res)

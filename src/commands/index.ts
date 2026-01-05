@@ -19,3 +19,12 @@ Visit ${asPrimary(
   .addCommand(authCommand)
   .addCommand(templateCommand)
   .addCommand(sandboxCommand)
+
+function addDebugOption(cmd: commander.Command) {
+  cmd.option('--debug', 'print Trace ID for debugging')
+  for (const subcommand of cmd.commands) {
+    addDebugOption(subcommand)
+  }
+}
+
+addDebugOption(program)
