@@ -29,7 +29,7 @@ export class SandboxError extends Error {
  *
  * The [deadline_exceeded] error type is caused by exceeding the timeout for command execution, watch, etc.
  *
- * The [unknown] error type is sometimes caused by the sandbox timeout when the request is not processed correctly.
+ * It may also occur because the sandbox has reached the end of its lifecycle.
  */
 export class TimeoutError extends SandboxError {
   constructor(message: string, stackTrace?: string) {

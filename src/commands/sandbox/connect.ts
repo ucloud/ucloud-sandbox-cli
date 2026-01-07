@@ -24,6 +24,13 @@ export const connectCommand = new commander.Command('connect')
       process.exit(0)
     } catch (err: any) {
       console.error(err)
+      const message =
+        typeof err?.message === 'string' ? err.message : String(err)
+      if (/unknown[_ ]error/i.test(message)) {
+        console.error(
+          'Connection closed, it might be because the sandbox has reached the end of its lifecycle.'
+        )
+      }
       process.exit(1)
     }
   })
