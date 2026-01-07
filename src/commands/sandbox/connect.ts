@@ -22,18 +22,29 @@ export const connectCommand = new commander.Command('connect')
       // We explicitly call exit because the sandbox is keeping the program alive.
       // We also don't want to call sandbox.close because that would disconnect other users from the edit session.
       process.exit(0)
-    } catch (err: any) {
-      console.error(err)
-      const message =
-        typeof err?.message === 'string' ? err.message : String(err)
-      if (/unknown[_ ]error/i.test(message)) {
-        console.error(
-          'Connection closed, it might be because the sandbox has reached the end of its lifecycle.'
-        )
-      }
-      process.exit(1)
-    }
-  })
+	    } catch (err: any) {
+	      console.error(err)
+	      const message =
+	        typeof err?.message === 'string' ? err.message : String(err)
+	      if (shouldShowLifecycleHint(message)) {
+	        console.error(
+	          'Connection closed, it might be because the sandbox has reached the end of its lifecycle.'
+	        )
+	      }
+	      process.exit(1)
+	    }
+	  })
+
+function shouldShowLifecycleHint(message: string): boolean {
+  // Observed examples:
+  // - "unknown_error"
+  // - "Unknown error"
+  // - "2: [unknown] terminated" (gRPC code 2 = UNKNOWN)
+  return (
+    /unknown[_ ]error/i.test(message) ||
+    (/\[unknown\]/i.test(message) && /\bterminated\b/i.test(message))
+  )
+}
 
 async function connectToSandbox({
   apiKey,
