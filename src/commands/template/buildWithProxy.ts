@@ -18,15 +18,15 @@ export async function buildWithProxy(
 ) {
   if (!userConfig?.dockerProxySet) {
     console.log(
-      'There was an issue during Docker authentication. Please follow the workaround steps from https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error and then continue.'
+      'There was an issue during Docker authentication. Please follow the workaround steps from https://github.com/UCloudDoc-Team/agent-sandbox and then continue.'
     )
     const yes = await confirm(
-      'Have you completed the steps from the https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error workaround guide?'
+      'Have you completed the steps from the https://github.com/UCloudDoc-Team/agent-sandbox workaround guide?'
     )
 
     if (!yes) {
       console.log(
-        'Please follow the workaround steps from https://sandbox.ucloudai.com/docs/troubleshooting/templates/build-authentication-error and then try again.'
+        'Please follow the workaround steps from https://github.com/UCloudDoc-Team/agent-sandbox and then try again.'
       )
       process.exit(1)
     }

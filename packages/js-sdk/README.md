@@ -44,7 +44,4 @@ console.log(execution.text)  // outputs 2
 ```
 
 ### 4. Check docs
-Visit [UCloud Sandbox documentation](https://sandbox.ucloudai.com/docs).
-
-### 5. E2B cookbook
-Visit our [Cookbook](https://github.com/e2b-dev/e2b-cookbook/tree/main) to get inspired by examples with different LLMs and AI frameworks.
+Visit [UCloud Sandbox documentation](https://github.com/UCloudDoc-Team/agent-sandbox).

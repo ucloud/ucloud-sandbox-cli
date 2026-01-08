@@ -169,7 +169,7 @@ sandbox = await AsyncSandbox.create("${templateName}")`)
 const sandbox = await Sandbox.create('${templateName}')`)
 
         const examplesMessage = `You can now use the template to create custom sandboxes.\nLearn more on ${asPrimary(
-          'https://sandbox.ucloudai.com/docs'
+          'https://github.com/UCloudDoc-Team/agent-sandbox'
         )}`
 
         const exampleHeader = boxen.default(examplesMessage, {

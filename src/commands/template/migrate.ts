@@ -234,7 +234,7 @@ export const migrateCommand = new commander.Command('migrate')
 
         console.log(
           `\nLearn more about Template SDK: ${asPrimary(
-            'https://sandbox.ucloudai.com/docs'
+            'https://github.com/UCloudDoc-Team/agent-sandbox'
           )}\n`
         )
         success = true
