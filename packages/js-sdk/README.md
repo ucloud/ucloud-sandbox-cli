@@ -44,4 +44,4 @@ console.log(execution.text)  // outputs 2
 ```
 
 ### 4. Check docs
-Visit [UCloud Sandbox documentation](https://github.com/UCloudDoc-Team/agent-sandbox).
+Visit [UCloud Sandbox documentation](https://docs.ucloud.cn/agent-sandbox/README).

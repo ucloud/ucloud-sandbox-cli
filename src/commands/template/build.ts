@@ -521,7 +521,7 @@ const sandbox = await Sandbox.create('${aliases?.length ? aliases[0] : template.
           }')`)
 
         const examplesMessage = `You can now use the template to create custom sandboxes.\nLearn more on ${asPrimary(
-          'https://github.com/UCloudDoc-Team/agent-sandbox'
+          'https://docs.ucloud.cn/agent-sandbox/README'
         )}`
 
         const exampleHeader = boxen.default(examplesMessage, {
@@ -562,7 +562,7 @@ const sandbox = await Sandbox.create('${aliases?.length ? aliases[0] : template.
             aliases,
             ...template,
           })} failed.\nCheck the logs above for more details or contact us ${asPrimary(
-            '(https://github.com/UCloudDoc-Team/agent-sandbox)'
+            '(https://docs.ucloud.cn/agent-sandbox/README)'
           )} to get help.\n`
         )
     }

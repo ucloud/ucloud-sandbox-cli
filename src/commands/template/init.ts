@@ -325,7 +325,7 @@ export const initCommand = new commander.Command('init')
 
         console.log(
           `\nLearn more about Sandbox Templates: ${asPrimary(
-            'https://github.com/UCloudDoc-Team/agent-sandbox'
+            'https://docs.ucloud.cn/agent-sandbox/README'
           )}\n`
         )
       } catch (err: any) {
