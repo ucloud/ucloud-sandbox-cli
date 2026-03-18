@@ -102,11 +102,11 @@ export class ConnectionConfig {
   }
 
   private static get domain() {
-    return getEnvVar('E2B_DOMAIN') || 'sandbox.ucloudai.com'
+    return getEnvVar('UCLOUD_SANDBOX_DOMAIN') || getEnvVar('E2B_DOMAIN') || 'sandbox.ucloudai.com'
   }
 
   private static get apiUrl() {
-    return getEnvVar('E2B_API_URL')
+    return getEnvVar('UCLOUD_SANDBOX_API_URL') || getEnvVar('E2B_API_URL')
   }
 
   private static get sandboxUrl() {

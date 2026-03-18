@@ -12,7 +12,7 @@ import {
   fallbackDockerfileName,
 } from 'src/docker/constants'
 import { configOption, pathOption, teamOption } from 'src/options'
-import { getUserConfig } from 'src/user'
+import { getUserConfig, USER_CONFIG_PATH } from 'src/user'
 import { getRoot } from 'src/utils/filesystem'
 import { wait } from 'src/utils/wait'
 import * as stripAnsi from 'strip-ansi'
@@ -28,12 +28,14 @@ import {
   asTypescript,
   withDelimiter,
 } from '../../utils/format'
-import { buildWithProxy } from './buildWithProxy'
 
 const templateCheckInterval = 500 // 0.5 sec
 
 // Custom image URI is used for Bring Your Own Compute with self-hosted Docker registry
 export const imageUriMask = process.env.UCLOUD_SANDBOX_IMAGE_URI_MASK
+
+// UHub Docker Registry
+const UHUB_REGISTRY = 'uhub.service.ucloud.cn'
 
 async function getTemplateBuildLogs({
   templateID,
@@ -87,11 +89,28 @@ async function requestTemplateRebuild(
   })
 }
 
-async function triggerTemplateBuild(templateID: string, buildID: string) {
+async function triggerTemplateBuild(
+  templateID: string,
+  buildID: string,
+  fromImage?: string,
+  registryCredentials?: { username: string; password: string }
+) {
   let res
   const maxRetries = 3
   for (let i = 0; i < maxRetries; i++) {
     try {
+      const body: Record<string, unknown> = {}
+      if (fromImage) {
+        body.fromImage = fromImage
+      }
+      if (registryCredentials) {
+        body.fromImageRegistry = {
+          type: 'registry',
+          username: registryCredentials.username,
+          password: registryCredentials.password,
+        }
+      }
+
       res = await client.api.POST('/templates/{templateID}/builds/{buildID}', {
         params: {
           path: {
@@ -99,6 +118,7 @@ async function triggerTemplateBuild(templateID: string, buildID: string) {
             buildID,
           },
         },
+        body: body as any,
       })
 
       break
@@ -197,6 +217,8 @@ export const buildCommand = new commander.Command('build')
         noCache?: boolean
       }
     ) => {
+      let uhubRepoPath = ''
+      let uhubCreds: { username: string; password: string } | undefined
       try {
         // Display deprecation warning
         const deprecationMessage = `${asBold('DEPRECATION WARNING')}
@@ -241,7 +263,7 @@ Migration guide: ${asPrimary('https://docs.ucloud.cn/modelverse/README')}`
           })
         }
 
-        const accessToken = ensureAccessToken()
+        ensureAccessToken()
         process.stdout.write('\n')
 
         const newName = opts.name?.trim()
@@ -374,20 +396,85 @@ Migration guide: ${asPrimary('https://docs.ucloud.cn/modelverse/README')}`
         )
 
         if (imageUriMask == undefined) {
+          // Login to UHub registry — reuse saved credentials or prompt
+          const inquirer = await import('inquirer')
+          let savedConfig = getUserConfig()
+          let uhubUsername = savedConfig?.uhubUsername || ''
+          let uhubPassword = savedConfig?.uhubPassword || ''
+
+          if (uhubUsername && uhubPassword) {
+            console.log(`Using saved UHub credentials (username: ${uhubUsername})`)
+          } else {
+            console.log(`Logging in to UHub registry (${UHUB_REGISTRY})...`)
+            const answers = await inquirer.default.prompt([
+              {
+                name: 'uhubUsername',
+                type: 'input',
+                message: 'UHub username:',
+              },
+              {
+                name: 'uhubPassword',
+                type: 'password',
+                message: 'UHub password (token):',
+                mask: '*',
+              },
+            ])
+            uhubUsername = answers.uhubUsername
+            uhubPassword = answers.uhubPassword
+          }
+
           try {
             child_process.execSync(
-              `echo "${accessToken}" | docker login docker.${connectionConfig.domain} -u _sandbox_access_token --password-stdin`,
+              `docker login ${UHUB_REGISTRY} -u ${uhubUsername} --password-stdin`,
               {
-                stdio: 'inherit',
+                stdio: ['pipe', 'inherit', 'inherit'],
                 cwd: root,
+                input: uhubPassword,
               }
             )
+            uhubCreds = { username: uhubUsername, password: uhubPassword }
           } catch (err: any) {
             console.error(
-              'Docker login failed. Please try to log in with `ucloud-sandbox-cli auth login` and try again.'
+              `Docker login to ${UHUB_REGISTRY} failed. Please check your UHub credentials and try again.`
             )
+            // Clear saved credentials on failure
+            if (savedConfig) {
+              const { uhubUsername: _u, uhubPassword: _p, uhubRepo: _r, ...rest } = savedConfig
+              fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(rest, null, 2))
+            }
             process.exit(1)
           }
+
+          // Prompt for UHub namespace and repo name, reuse saved or ask
+          let uhubRepo = savedConfig?.uhubRepo || ''
+          if (uhubRepo) {
+            console.log(`Using saved UHub repo: ${uhubRepo}`)
+          } else {
+            const repoAnswer = await inquirer.default.prompt([
+              {
+                name: 'uhubNamespace',
+                type: 'input',
+                message: 'UHub namespace (e.g. ucloud-uhub):',
+                validate: (input: string) => input ? true : 'Namespace is required',
+              },
+              {
+                name: 'uhubRepoName',
+                type: 'input',
+                message: `UHub repo name:`,
+                default: templateID,
+                validate: (input: string) => input ? true : 'Repo name is required',
+              },
+            ])
+            uhubRepo = `${repoAnswer.uhubNamespace}/${repoAnswer.uhubRepoName}`
+          }
+
+          // Save all UHub settings to config
+          if (savedConfig) {
+            const updatedConfig = { ...savedConfig, uhubUsername, uhubPassword, uhubRepo }
+            fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(updatedConfig, null, 2))
+          }
+
+          uhubRepoPath = uhubRepo
         }
 
         process.stdout.write('\n')
@@ -402,7 +489,8 @@ Migration guide: ${asPrimary('https://docs.ucloud.cn/modelverse/README')}`
           templateID,
           template.buildID,
           connectionConfig.domain,
-          imageUriMask
+          imageUriMask,
+          uhubRepoPath
         )
         if (imageUriMask != undefined) {
           console.log('Using custom docker image URI:', imageUrl)
@@ -444,18 +532,15 @@ Migration guide: ${asPrimary('https://docs.ucloud.cn/modelverse/README')}`
             cwd: root,
           })
         } catch (err: any) {
-          await buildWithProxy(
-            userConfig,
-            connectionConfig,
-            accessToken,
-            template,
-            root
+          console.error(
+            `Docker push to ${UHUB_REGISTRY} failed. Please check your UHub credentials and repository permissions.`
           )
+          process.exit(1)
         }
         console.log('> Docker image pushed.\n')
 
         console.log('Triggering build...')
-        await triggerBuild(templateID, template.buildID)
+        await triggerBuild(templateID, template.buildID, imageUrl, uhubCreds)
 
         console.log(
           `> Triggered build for the sandbox template ${asFormattedSandboxTemplate(
@@ -656,8 +741,13 @@ async function requestBuildTemplate(
   return res.data
 }
 
-async function triggerBuild(templateID: string, buildID: string) {
-  await triggerTemplateBuild(templateID, buildID)
+async function triggerBuild(
+  templateID: string,
+  buildID: string,
+  fromImage?: string,
+  registryCredentials?: { username: string; password: string }
+) {
+  await triggerTemplateBuild(templateID, buildID, fromImage, registryCredentials)
 
   return
 }
@@ -665,11 +755,12 @@ async function triggerBuild(templateID: string, buildID: string) {
 function dockerImageUrl(
   templateID: string,
   buildID: string,
-  defaultDomain: string,
-  imageUrlMask?: string
+  _defaultDomain: string,
+  imageUrlMask?: string,
+  uhubRepo?: string
 ): string {
   if (imageUrlMask == undefined) {
-    return `docker.${defaultDomain}/sandbox/custom-envs/${templateID}:${buildID}`
+    return `${UHUB_REGISTRY}/${uhubRepo}:${buildID}`
   }
 
   return imageUrlMask

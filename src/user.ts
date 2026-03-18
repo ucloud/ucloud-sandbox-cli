@@ -12,6 +12,10 @@ export interface UserConfig {
   teamId: string
   teamApiKey: string
   dockerProxySet?: boolean
+  uhubUsername?: string
+  uhubPassword?: string
+  uhubRepo?: string
+  region?: string
 }
 
 export const USER_CONFIG_PATH = path.join(os.homedir(), '.ucloud-sandbox-cli', 'config.json')

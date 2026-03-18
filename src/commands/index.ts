@@ -4,6 +4,7 @@ import { asPrimary } from 'src/utils/format'
 import { templateCommand } from './template'
 import { sandboxCommand } from './sandbox'
 import { authCommand } from './auth'
+import { regionCommand } from './region'
 
 export const program = new commander.Command()
   .description(
@@ -19,6 +20,7 @@ Visit ${asPrimary(
   .addCommand(authCommand)
   .addCommand(templateCommand)
   .addCommand(sandboxCommand)
+  .addCommand(regionCommand)
 
 function addDebugOption(cmd: commander.Command) {
   cmd.option('--debug', 'print Trace ID for debugging')
