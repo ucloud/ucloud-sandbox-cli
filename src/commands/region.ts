@@ -5,6 +5,8 @@ import * as chalk from 'chalk'
 
 import { getUserConfig, USER_CONFIG_PATH } from 'src/user'
 
+export const DEFAULT_REGION = 'cn-wlcb'
+
 const REGIONS = [
   { id: 'cn-wlcb', name: 'cn-wlcb (China - North)' },
   { id: 'us-ca', name: 'us-ca (US - West)' },
@@ -13,13 +15,13 @@ const REGIONS = [
 type RegionId = (typeof REGIONS)[number]['id']
 
 export function getRegionDomain(region?: string): string {
-  if (!region) return 'sandbox.ucloudai.com'
-  return `${region}.sandbox.ucloudai.com`
+  const r = region || DEFAULT_REGION
+  return `${r}.sandbox.ucloudai.com`
 }
 
 export function getRegionApiUrl(region?: string): string {
-  if (!region) return 'https://api.sandbox.ucloudai.com'
-  return `https://api.${region}.sandbox.ucloudai.com`
+  const r = region || DEFAULT_REGION
+  return `https://api.${r}.sandbox.ucloudai.com`
 }
 
 function switchRegion(region: string) {

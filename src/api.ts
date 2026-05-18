@@ -3,7 +3,7 @@ import * as e2b from 'e2b'
 
 import { getUserConfig, UserConfig } from './user'
 import { asBold, asPrimary } from './utils/format'
-import { getRegionDomain, getRegionApiUrl } from './commands/region'
+import { getRegionDomain, getRegionApiUrl, DEFAULT_REGION } from './commands/region'
 
 export let apiKey = process.env.AGENTBOX_API_KEY
 export let accessToken = process.env.AGENTBOX_ACCESS_TOKEN
@@ -88,21 +88,20 @@ export function ensureAccessToken() {
 }
 
 const userConfig = getUserConfig()
+const region = userConfig?.region || DEFAULT_REGION
 
 // Inject region-based domain/apiUrl into env so SDK internal calls (Sandbox.list, etc.) also use them
-if (userConfig?.region) {
-  if (!process.env.UCLOUD_SANDBOX_DOMAIN) {
-    process.env.UCLOUD_SANDBOX_DOMAIN = getRegionDomain(userConfig.region)
-  }
-  if (!process.env.UCLOUD_SANDBOX_API_URL) {
-    process.env.UCLOUD_SANDBOX_API_URL = getRegionApiUrl(userConfig.region)
-  }
+if (!process.env.UCLOUD_SANDBOX_DOMAIN) {
+  process.env.UCLOUD_SANDBOX_DOMAIN = getRegionDomain(region)
+}
+if (!process.env.UCLOUD_SANDBOX_API_URL) {
+  process.env.UCLOUD_SANDBOX_API_URL = getRegionApiUrl(region)
 }
 
 export const connectionConfig = new e2b.ConnectionConfig({
   accessToken: process.env.AGENTBOX_ACCESS_TOKEN || userConfig?.accessToken,
   apiKey: process.env.AGENTBOX_API_KEY || userConfig?.teamApiKey,
-  domain: process.env.UCLOUD_SANDBOX_DOMAIN || getRegionDomain(userConfig?.region),
-  apiUrl: process.env.UCLOUD_SANDBOX_API_URL || getRegionApiUrl(userConfig?.region),
+  domain: process.env.UCLOUD_SANDBOX_DOMAIN || getRegionDomain(region),
+  apiUrl: process.env.UCLOUD_SANDBOX_API_URL || getRegionApiUrl(region),
 })
 export const client = new e2b.ApiClient(connectionConfig)
