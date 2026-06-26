@@ -4,6 +4,24 @@
 
 这是一个用Go编写的命令行工具，用于管理和操作UCloud Sandbox沙箱服务。UCloud Sandbox的API完全兼容E2B格式，CLI实现可以参考E2B的CLI设计。
 
+## 快速开始
+
+### 编译项目
+
+```bash
+make build
+```
+
+编译后的二进制文件位于 `./bin/ucloud-sandbox-cli`
+
+### 运行测试
+
+```bash
+make test
+```
+
+执行所有单元测试（包括 `internal/` 下的所有测试）
+
 ## 核心依赖
 
 1. **UCloud Sandbox SDK** (`github.com/ucloud/ucloud-sandbox-sdk-go`)
@@ -36,9 +54,7 @@
 3. 命令函数命名规范：`New<CommandName>Cmd()`
 
 ### `internal/`
-存放CLI使用的公用包，包括：
-- `config/` — 配置加载、保存和客户端创建
-- `prompt/` — 命令行交互（使用 promptui）
+存放CLI使用的公用包
 
 **internal包要求：**
 - 尽量为所有功能编写单元测试

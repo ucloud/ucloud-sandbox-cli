@@ -10,6 +10,7 @@ func NewSandboxCmd() *cobra.Command {
 		Short:   "Manage sandboxes",
 	}
 	cmd.AddCommand(newCreateCmd())
+	cmd.AddCommand(newCloneCmd())
 	cmd.AddCommand(newConnectCmd())
 	cmd.AddCommand(newKillCmd())
 	cmd.AddCommand(newPauseCmd())
