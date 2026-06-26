@@ -1,0 +1,6 @@
+[submodule "submodules/ucloud-sandbox-sdk-go"]
+	path = submodules/ucloud-sandbox-sdk-go
+	url = https://github.com/ucloud/ucloud-sandbox-sdk-go.git
+[submodule "submodules/e2b"]
+	path = submodules/e2b
+	url = https://github.com/e2b-dev/e2b.git
