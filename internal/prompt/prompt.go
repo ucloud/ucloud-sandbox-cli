@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/manifoldco/promptui"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/template"
 )
 
 var predefinedRegions = []string{"cn-wlcb", "us-ca"}
@@ -62,4 +63,33 @@ func askCustomRegion() (string, error) {
 		},
 	}
 	return p.Run()
+}
+
+// AskTemplateName prompts for a template name with validation.
+func AskTemplateName(defaultName string) (string, error) {
+	p := promptui.Prompt{
+		Label:   "Template name",
+		Default: defaultName,
+		Validate: func(s string) error {
+			return template.ValidateName(s)
+		},
+	}
+	return p.Run()
+}
+
+// Confirm shows a yes/no confirmation prompt.
+func Confirm(label string) (bool, error) {
+	p := promptui.Prompt{
+		Label:     label,
+		IsConfirm: true,
+	}
+	_, err := p.Run()
+	if err != nil {
+		// User pressed 'n' or Ctrl+C
+		if err == promptui.ErrAbort {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
