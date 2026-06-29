@@ -164,37 +164,75 @@ curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/instal
 
 API Key 可从星图平台密钥管理获取：`https://astraflow.ucloud.cn/modelverse/api-keys`。常用地域包括 `cn-wlcb` 和 `us-ca`；不确定时询问用户。
 
-优先使用环境变量，适合临时会话和 CI：
+持久化配置文件路径是 `~/.ucloud-sandbox-cli/config.json`，建议目录权限为 `700`、文件权限为 `600`。配置文件是 JSON，格式如下；展示或读取时必须隐藏 `api_key`：
+
+```json
+{
+  "api_key": "<api-key>",
+  "region": "cn-wlcb",
+  "domain": "cn-wlcb.sandbox.ucloudai.com"
+}
+```
+
+字段说明：
+
+- `api_key`：用户的 UCloud Sandbox API Key，必须保密。
+- `region`：地域，例如 `cn-wlcb` 或 `us-ca`。
+- `domain`：可选，显式 API 域名；存在时优先于 `region` 推导出的默认域名。
+
+不要让 Agent 执行 `ucloud-sandbox-cli login` 或 `ucloud-sandbox-cli region`。这两个命令需要真实交互式终端，Agent/CI 中通常会失败。
+
+如果用户没有配置 API Key，不要让 Agent 询问或读取用户的 API Key 后写入配置文件。提示用户在真实终端中手动登录：
+
+```bash
+ucloud-sandbox-cli login
+```
+
+并说明 API Key 可从星图平台 Key 管理获取：`https://astraflow.ucloud.cn/modelverse/api-keys`。
+
+如果用户明确希望使用环境变量，给出命令让用户自己在终端设置，适合临时会话和 CI：
 
 ```bash
 export UCLOUD_SANDBOX_API_KEY="<api-key>"
 export UCLOUD_SANDBOX_REGION="cn-wlcb"
 ```
 
-持久化配置优先使用交互命令：
+切换持久化地域时，Agent 不执行 `ucloud-sandbox-cli region`，直接修改已有配置文件的 `region` 字段。修改前先确认配置文件存在；如果不存在，提示用户先在真实终端执行 `ucloud-sandbox-cli login`。
 
 ```bash
-ucloud-sandbox-cli login
-```
+CONFIG_FILE="$HOME/.ucloud-sandbox-cli/config.json"
+NEW_REGION="cn-wlcb"
 
-如果用户明确提供 API Key 和地域，并要求 Agent 直接生成配置，可写入 `~/.ucloud-sandbox-cli/config.json`。把下面的 `<api-key>` 和地域替换成用户提供值；不要打印 API Key，不要提交到 git。
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "Config file not found. Please run 'ucloud-sandbox-cli login' in a real terminal first." >&2
+  exit 1
+fi
 
-```bash
-mkdir -p "$HOME/.ucloud-sandbox-cli"
-chmod 700 "$HOME/.ucloud-sandbox-cli"
-cat > "$HOME/.ucloud-sandbox-cli/config.json" <<'EOF'
-{
-  "api_key": "<api-key>",
-  "region": "cn-wlcb"
-}
-EOF
+tmp="$(mktemp)"
+jq --arg region "$NEW_REGION" '.region = $region' "$CONFIG_FILE" > "$tmp"
+mv "$tmp" "$CONFIG_FILE"
 chmod 600 "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
-环境变量优先级高于配置文件。切换地域：
+如果没有 `jq`，不要用易误伤 `api_key` 的字符串替换方案；请提示用户安装 `jq`，或让用户在真实终端运行 `ucloud-sandbox-cli region` 自行切换。
+
+需要读取配置确认地域或域名时，必须隐藏 `api_key`，不要 `cat ~/.ucloud-sandbox-cli/config.json`。优先只读取必要字段：
 
 ```bash
-ucloud-sandbox-cli region
+jq -r '.region // empty' "$HOME/.ucloud-sandbox-cli/config.json"
+jq -r '.domain // empty' "$HOME/.ucloud-sandbox-cli/config.json"
+```
+
+如果必须展示配置摘要，先脱敏：
+
+```bash
+jq '.api_key = if .api_key then "***hidden***" else . end' "$HOME/.ucloud-sandbox-cli/config.json"
+```
+
+没有 `jq` 时，使用不会输出真实密钥的方式：
+
+```bash
+sed -E 's/"api_key"[[:space:]]*:[[:space:]]*"[^"]*"/"api_key": "***hidden***"/' "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
 退出登录并删除本地凭据：
@@ -206,9 +244,11 @@ ucloud-sandbox-cli logout
 ## Agent 操作原则
 
 - 在 Claude Code、Codex、Gemini、CI 等非 TTY 环境中，创建或克隆沙箱时默认加 `--detach`，否则 CLI 会尝试进入交互终端。
+- 不要执行 `ucloud-sandbox-cli login` 或 `ucloud-sandbox-cli region`；让用户在真实终端执行登录，Agent 只通过修改已有配置文件切换地域。
+- 当本地没有 API Key 配置时，不要向用户索取 API Key 并代写配置；提示用户在真实终端运行 `ucloud-sandbox-cli login`，API Key 从星图平台 Key 管理获取。
 - 需要解析列表时优先用 `--format json` 或 `-f json`。
 - 执行破坏性命令前先确认用户意图：`sandbox kill`、`sandbox kill --all`、`snapshot delete`、`template delete`、`template publish --unpublish`。
-- 不要在回复、日志或命令输出中泄露 API Key。
+- 不要在回复、日志或命令输出中泄露 API Key；读取 `~/.ucloud-sandbox-cli/config.json` 时必须隐藏 `api_key`，只展示地域、域名等必要字段。
 - 用户要打开交互式终端时，建议让用户在真实终端中运行 `sandbox connect`。
 
 ## Sandbox 常用操作
@@ -359,8 +399,9 @@ ucloud-sandbox-cli template delete --select
 
 ```bash
 ucloud-sandbox-cli version
-ucloud-sandbox-cli login
 ```
+
+如果未登录，提示用户在真实终端执行 `ucloud-sandbox-cli login`，不要由 Agent 执行该交互命令。
 
 创建沙箱并执行命令：
 
@@ -392,7 +433,7 @@ ucloud-sandbox-cli sandbox create <template-id-or-name> --detach
 
 | 现象 | 处理 |
 | --- | --- |
-| `API key is required` | 运行 `ucloud-sandbox-cli login`，或设置 `UCLOUD_SANDBOX_API_KEY` |
+| `API key is required` | 提示用户在真实终端运行 `ucloud-sandbox-cli login`，或由用户自行设置 `UCLOUD_SANDBOX_API_KEY`；API Key 从星图平台 Key 管理获取 |
 | 命令安装成功但找不到 | 把安装目录加入 `PATH`，例如 `export PATH="$HOME/.local/bin:$PATH"` |
 | 创建沙箱后卡在终端 | Agent/CI 中使用 `sandbox create ... --detach` |
 | `template not found` | 运行 `template list --format json` 确认模板 ID/名称 |
