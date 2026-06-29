@@ -61,12 +61,26 @@ echo "ucloud-sandbox skill installed to $SKILL_DIR"
 每次准备执行真实操作前先检查：
 
 ```bash
-if ! command -v ucloud-sandbox-cli >/dev/null 2>&1; then
-  echo "NOT_INSTALLED"
-else
+OLD_NPM_PACKAGE="@ucloud-sdks/ucloud-sandbox-cli"
+
+if command -v npm >/dev/null 2>&1 && npm list -g "$OLD_NPM_PACKAGE" --depth=0 >/dev/null 2>&1; then
+  echo "OLD_NPM_CLI_FOUND"
+elif command -v ucloud-sandbox-cli >/dev/null 2>&1; then
   ucloud-sandbox-cli version
+else
+  echo "NOT_INSTALLED"
 fi
 ```
+
+如果输出 `OLD_NPM_CLI_FOUND`，说明安装的是 v1.0 及以前的 npm 版旧 CLI。先卸载旧版，再安装新版二进制：
+
+```bash
+npm uninstall -g @ucloud-sdks/ucloud-sandbox-cli
+curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh
+ucloud-sandbox-cli version
+```
+
+如果全局 npm 卸载需要权限或交互确认，提示用户在真实终端执行卸载命令。
 
 如果未安装，使用官方安装脚本：
 
