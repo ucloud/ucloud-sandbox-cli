@@ -2,13 +2,15 @@
 
 强大的命令行工具，用于本地管理沙箱生命周期、构建模板及执行运维任务。
 
-UCloud Sandbox CLI 是开发者最常用的工具之一。它不仅可以帮助您快速初始化和构建沙箱模板，还可以实时查看沙箱日志、监控指标以及执行批量操作。
+UCloud Sandbox CLI 是开发者最常用的工具之一。它不仅可以帮助您快速初始化和构建沙箱模板，还可以实时查看沙箱监控指标以及执行批量操作。
 
 ## 安装指南
 
 ### 卸载旧的基于npm的CLI（可选）
 
-在`v1.0`及以前的版本中，我们的CLI是基于npm构建和分发的，在后续版本中，我们改为了Go语言构建并且提供安装脚本而不再基于npm。如果您安装过`v1.0.x`的`ucloud-sandbox-cli`，请先使用下面的命令进行卸载：
+在`v1.0`及以前的版本中，我们的CLI是基于npm构建和分发的，在后续版本中，我们改为了手动执行安装脚本。
+
+如果您安装过`v1.0.x`的`ucloud-sandbox-cli`，请先使用下面的命令进行卸载：
 
 ```bash
 npm uninstall -g @ucloud-sdks/ucloud-sandbox-cli
@@ -43,27 +45,27 @@ API key可以从星图平台的[密钥管理](https://astraflow.ucloud.cn/modelv
 
 ### 持久化认证
 
-上面的环境变量只会作用于您的当前上下文，如果需要配置全局认证，可以使用下面的命令：
+配置持久化认证：
 
 ```bash
+# 这个命令会要求您输入API key并选择默认地域
 ucloud-sandbox-cli login
 ```
 
-命令行会要求您输入API key并选择默认地域。
-
-如果您想删除全局认证，可以使用下面命令完成：
+删除持久化认证：
 
 ```bash
 ucloud-sandbox-cli logout
 ```
 
-在全局认证生效的情况下，仍然可以使用上面的环境变量来替换API key和地域。
+> 在持久化认证生效的情况下，仍然可以使用环境变量来替换API key和地域。
 
 ### 切换地域
 
-使用下面的命令可以快速选择并切换地域（会列出当前可用的地域供您选择）：
+快速选择并切换地域：
 
 ```bash
+# 会列出当前可用的地域供您选择
 ucloud-sandbox-cli region
 ```
 
@@ -71,7 +73,7 @@ ucloud-sandbox-cli region
 
 ### 创建与连接
 
-快速创建沙箱并进入交互式终端。
+快速创建沙箱并进入交互式终端：
 
 ```bash
 # 使用内置模板创建沙箱
@@ -96,7 +98,7 @@ ucloud-sandbox-cli sandbox create base
 
 ### 连接现有沙箱
 
-重新连接到已运行的沙箱实例。
+重新连接到已运行的沙箱实例：
 
 ```bash
 ucloud-sandbox-cli sandbox connect <sandbox-id>
@@ -105,7 +107,7 @@ ucloud-sandbox-cli sandbox connect <sandbox-id>
 
 ### 列表查询
 
-查看名下所有活跃（运行或暂停）的沙箱实例。
+查看名下所有活跃（运行或暂停）的沙箱实例：
 
 ```bash
 ucloud-sandbox-cli sandbox list
@@ -114,7 +116,7 @@ ucloud-sandbox-cli sandbox list
 
 ### 强制关停 (Kill)
 
-立即释放沙箱资源。
+立即释放沙箱资源：
 
 ```bash
 # 关停特定 ID
@@ -126,7 +128,7 @@ ucloud-sandbox-cli sandbox kill --all
 
 ### 监控
 
-实时洞察沙箱运行状态。
+实时洞察沙箱运行状态：
 
 ```bash
 # 查看资源占用指标 (CPU/RAM/Disk)
@@ -140,7 +142,7 @@ ucloud-sandbox-cli sandbox metrics <sandbox-id> -w
 
 ### 初始化模板项目
 
-创建一个标准化的模板开发目录。
+创建一个标准化的模板开发目录：
 
 ```bash
 ucloud-sandbox-cli tpl init my-custom-env --cpu <cpu> --memory <memory>
@@ -151,7 +153,7 @@ cd my-custom-env
 
 在上面的`my-custom-env`里面，您可以看到`template.dockerfile`文件，您需要编辑这个文件，输入`RUN`命令以定义构建模板需要的命令。
 
-定义好了之后，使用下面命令构建模板：
+构建模板：
 
 ```bash
 ucloud-sandbox-cli tpl build my-custom-env
