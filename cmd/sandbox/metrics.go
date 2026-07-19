@@ -149,7 +149,7 @@ func formatMetrics(metrics []sdk.SandboxMetrics, sandboxID string, width int) st
 		return b.String()
 	}
 
-	first, last := metrics[0].Timestamp, metrics[len(metrics)-1].Timestamp
+	first, last := metricDisplayRange(metrics)
 	if !first.IsZero() && !last.IsZero() {
 		writeMetricLine(&b, fmt.Sprintf("Time    %s - %s", first.Format("15:04:05"), last.Format("15:04:05")), width)
 	}
@@ -177,6 +177,18 @@ func formatMetrics(metrics []sdk.SandboxMetrics, sandboxID string, width int) st
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func metricDisplayRange(metrics []sdk.SandboxMetrics) (time.Time, time.Time) {
+	first := metrics[0].Timestamp
+	last := metrics[len(metrics)-1].Timestamp
+	if !first.IsZero() {
+		first = first.In(time.Local)
+	}
+	if !last.IsZero() {
+		last = last.In(time.Local)
+	}
+	return first, last
 }
 
 func writeMetricLine(b *strings.Builder, line string, width int) {
