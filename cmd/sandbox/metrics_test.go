@@ -125,6 +125,25 @@ func TestMetricsXAxisLayoutIncludesDateWhenNeeded(t *testing.T) {
 	}
 }
 
+func TestMetricDisplayRangeUsesLocalTimezone(t *testing.T) {
+	sourceLocation := time.FixedZone("source", 2*60*60)
+	firstInput := time.Date(2026, time.July, 17, 23, 30, 0, 0, sourceLocation)
+	lastInput := firstInput.Add(2 * time.Hour)
+	first, last := metricDisplayRange([]sdk.SandboxMetrics{
+		{Timestamp: firstInput},
+		{Timestamp: lastInput},
+	})
+
+	wantFirst := firstInput.In(time.Local)
+	wantLast := lastInput.In(time.Local)
+	if !first.Equal(wantFirst) || first.Location() != time.Local {
+		t.Fatalf("first display time = %v (%v), want %v (%v)", first, first.Location(), wantFirst, time.Local)
+	}
+	if !last.Equal(wantLast) || last.Location() != time.Local {
+		t.Fatalf("last display time = %v (%v), want %v (%v)", last, last.Location(), wantLast, time.Local)
+	}
+}
+
 func assertMetricsLineWidth(t *testing.T, output string, maxWidth int) {
 	t.Helper()
 	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
