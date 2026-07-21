@@ -1,6 +1,6 @@
 ---
 name: ucloud-sandbox
-description: 当用户需要用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、查看沙箱列表/端口地址/监控指标、创建/列出/删除快照、初始化/构建/发布/删除模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
+description: 当用户需要用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、浏览和管理沙箱文件、上传或下载文件、查看端口地址和监控指标、管理快照与模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
 ---
 
 # UCloud Sandbox CLI
@@ -261,7 +261,7 @@ ucloud-sandbox-cli logout
 - 不要执行 `ucloud-sandbox-cli login` 或 `ucloud-sandbox-cli region`；让用户在真实终端执行登录，Agent 只通过修改已有配置文件切换地域。
 - 当本地没有 API Key 配置时，不要向用户索取 API Key 并代写配置；提示用户在真实终端运行 `ucloud-sandbox-cli login`，API Key 从星图平台 Key 管理获取。
 - 需要解析列表时优先用 `--format json` 或 `-f json`。
-- 执行破坏性命令前先确认用户意图：`sandbox kill`、`sandbox kill --all`、`snapshot delete`、`template delete`、`template publish --unpublish`。
+- 执行破坏性命令前先确认用户意图：`sandbox kill`、`sandbox kill --all`、`fs rm`、`snapshot delete`、`template delete`、`template publish --unpublish`。
 - 不要在回复、日志或命令输出中泄露 API Key；读取 `~/.ucloud-sandbox-cli/config.json` 时必须隐藏 `api_key`，只展示地域、域名等必要字段。
 - 用户要打开交互式终端时，建议让用户在真实终端中运行 `sandbox connect`。
 
@@ -324,6 +324,93 @@ ucloud-sandbox-cli sandbox clone <sandbox-id> --detach
 ucloud-sandbox-cli sandbox kill <sandbox-id>
 ucloud-sandbox-cli sandbox kill --all --state running
 ```
+
+## 文件系统常用操作
+
+文件系统命令统一使用 `ucloud-sandbox-cli fs`。除 `cp` 外，第一个参数都是沙箱 ID；路径可以是沙箱内的绝对路径或相对路径。
+
+### 浏览文件
+
+列出当前默认目录、指定目录或单个文件：
+
+```bash
+ucloud-sandbox-cli fs ls <sandbox-id>
+ucloud-sandbox-cli fs ls <sandbox-id> /home/user
+ucloud-sandbox-cli fs ls <sandbox-id> /home/user/app/package.json
+```
+
+需要稳定解析结果时使用 JSON 格式：
+
+```bash
+ucloud-sandbox-cli fs ls <sandbox-id> /home/user/app --format json
+ucloud-sandbox-cli fs ls <sandbox-id> /home/user/app -f json
+```
+
+### 读取文件
+
+把远端文件内容输出到标准输出：
+
+```bash
+ucloud-sandbox-cli fs cat <sandbox-id> /home/user/app/package.json
+```
+
+`fs cat` 不会自动脱敏。读取 `.env`、凭证、配置文件或其他可能包含密钥的文件前，先确认确有必要；不要把敏感内容直接回显给用户或写入日志。二进制文件和需要保存到本地的文件使用 `fs cp` 下载，不要使用 `fs cat`。
+
+### 创建目录
+
+```bash
+ucloud-sandbox-cli fs mkdir <sandbox-id> /home/user/app
+```
+
+目录已存在时命令仍然成功，并输出 `Directory already exists`。`fs mkdir` 一次接收一个目录；创建多层目录时从已有父目录开始逐层执行。确需递归创建时，可以使用 `sandbox exec <sandbox-id> "mkdir -p <dir>"`，但必须先校验路径，避免拼接未经验证的用户输入。
+
+### 上传和下载文件
+
+`fs cp` 的用法是 `fs cp <src-path> <dest-path>`。远端端点必须写成 `<sandbox-id>:<path>`，源和目标中必须恰好有一个远端端点；不支持远端到远端复制，也不递归复制目录。
+
+上传单个文件：
+
+```bash
+ucloud-sandbox-cli fs cp ./index.html <sandbox-id>:/home/user/app/index.html
+```
+
+上传到远端目录并保留本地文件名时，远端目标必须以 `/` 结尾：
+
+```bash
+ucloud-sandbox-cli fs cp ./index.html <sandbox-id>:/home/user/app/
+```
+
+下载文件：
+
+```bash
+ucloud-sandbox-cli fs cp <sandbox-id>:/home/user/app/output.txt ./output.txt
+```
+
+如果本地目标是已经存在的目录，CLI 会保留远端文件名：
+
+```bash
+ucloud-sandbox-cli fs cp <sandbox-id>:/home/user/app/output.txt ./downloads/
+```
+
+传输目录时，先用 `tar` 等工具打包成单个文件，上传或下载后再解包。打包部署内容时排除 `.git`、`.env`、API Key、依赖缓存和其他不应传输的敏感或冗余文件。
+
+### 移动和重命名
+
+在同一个沙箱内移动或重命名路径：
+
+```bash
+ucloud-sandbox-cli fs mv <sandbox-id> /home/user/app/old.txt /home/user/app/new.txt
+```
+
+`fs mv` 不能跨沙箱移动，也不能在本地与沙箱之间移动；这两类场景使用 `fs cp`，确认复制成功后再按用户意图决定是否删除源文件。
+
+### 删除文件或目录
+
+```bash
+ucloud-sandbox-cli fs rm <sandbox-id> /home/user/app/obsolete.txt
+```
+
+`fs rm` 是破坏性操作且没有交互确认。执行前确认沙箱 ID 和准确路径，必要时先用 `fs ls` 检查目标；不要删除根目录、用户主目录、来源不明的目录或未经用户授权的数据，也不要把未经验证的用户输入直接作为删除路径。
 
 ## Snapshot 常用操作
 
