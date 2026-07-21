@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	fscmd "github.com/ucloud/ucloud-sandbox-cli/cmd/fs"
 	sandboxcmd "github.com/ucloud/ucloud-sandbox-cli/cmd/sandbox"
 	snapshotcmd "github.com/ucloud/ucloud-sandbox-cli/cmd/snapshot"
 	templatecmd "github.com/ucloud/ucloud-sandbox-cli/cmd/template"
@@ -31,6 +32,7 @@ func newCommand() *cobra.Command {
 	c.AddCommand(cmd.NewLogoutCmd())
 	c.AddCommand(cmd.NewRegionCmd())
 	c.AddCommand(sandboxcmd.NewSandboxCmd())
+	c.AddCommand(fscmd.NewFsCmd())
 	c.AddCommand(snapshotcmd.NewSnapshotCmd())
 	c.AddCommand(templatecmd.NewTemplateCmd())
 
