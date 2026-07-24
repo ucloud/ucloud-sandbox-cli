@@ -27,7 +27,7 @@ func writeConfig(t *testing.T, home string, cfg *Config) {
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAPIKey, envRegion, envDomain, envInsecure} {
+	for _, k := range []string{envAPIKey, envRegion, envDomain, envInsecureHTTP} {
 		t.Setenv(k, "")
 	}
 }
@@ -35,48 +35,48 @@ func clearEnv(t *testing.T) {
 func TestLoad_FileOnly(t *testing.T) {
 	home := setupHome(t)
 	clearEnv(t)
-	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh", Insecure: true})
+	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh", InsecureHTTP: true})
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "key1", cfg.APIKey)
 	assert.Equal(t, "cn-sh", cfg.Region)
-	assert.True(t, cfg.Insecure)
+	assert.True(t, cfg.InsecureHTTP)
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
 	home := setupHome(t)
-	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region", Insecure: true})
+	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region", InsecureHTTP: true})
 	t.Setenv(envAPIKey, "env-key")
 	t.Setenv(envRegion, "env-region")
 	t.Setenv(envDomain, "env.example.com")
-	t.Setenv(envInsecure, "false")
+	t.Setenv(envInsecureHTTP, "false")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "env-key", cfg.APIKey)
 	assert.Equal(t, "env-region", cfg.Region)
 	assert.Equal(t, "env.example.com", cfg.Domain)
-	assert.False(t, cfg.Insecure)
+	assert.False(t, cfg.InsecureHTTP)
 }
 
-func TestLoad_EnvInsecureTrue(t *testing.T) {
+func TestLoad_EnvInsecureHTTPTrue(t *testing.T) {
 	setupHome(t)
 	clearEnv(t)
-	t.Setenv(envInsecure, "true")
+	t.Setenv(envInsecureHTTP, "true")
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	assert.True(t, cfg.Insecure)
+	assert.True(t, cfg.InsecureHTTP)
 }
 
-func TestLoad_InvalidEnvInsecure(t *testing.T) {
+func TestLoad_InvalidEnvInsecureHTTP(t *testing.T) {
 	setupHome(t)
 	clearEnv(t)
-	t.Setenv(envInsecure, "not-a-bool")
+	t.Setenv(envInsecureHTTP, "not-a-bool")
 
 	_, err := Load()
-	assert.ErrorContains(t, err, envInsecure)
+	assert.ErrorContains(t, err, envInsecureHTTP)
 }
 
 func TestLoad_NoFile(t *testing.T) {
@@ -88,13 +88,13 @@ func TestLoad_NoFile(t *testing.T) {
 	assert.Empty(t, cfg.APIKey)
 	assert.Empty(t, cfg.Region)
 	assert.Empty(t, cfg.Domain)
-	assert.False(t, cfg.Insecure)
+	assert.False(t, cfg.InsecureHTTP)
 }
 
 func TestSave(t *testing.T) {
 	home := setupHome(t)
 
-	in := &Config{APIKey: "save-key", Region: "cn-bj", Insecure: true}
+	in := &Config{APIKey: "save-key", Region: "cn-bj", InsecureHTTP: true}
 	require.NoError(t, Save(in))
 
 	data, err := os.ReadFile(filepath.Join(home, configDir, configFile))
@@ -103,7 +103,9 @@ func TestSave(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.Equal(t, in.APIKey, out.APIKey)
 	assert.Equal(t, in.Region, out.Region)
-	assert.Equal(t, in.Insecure, out.Insecure)
+	assert.Equal(t, in.InsecureHTTP, out.InsecureHTTP)
+	assert.Contains(t, string(data), `"insecure_http": true`)
+	assert.NotContains(t, string(data), `"insecure":`)
 }
 
 func TestResolveDomain(t *testing.T) {

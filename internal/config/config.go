@@ -17,18 +17,18 @@ const (
 	configDir      = ".ucloud-sandbox-cli"
 	configFile     = "config.json"
 
-	envAPIKey   = "UCLOUD_SANDBOX_API_KEY"
-	envRegion   = "UCLOUD_SANDBOX_REGION"
-	envDomain   = "UCLOUD_SANDBOX_DOMAIN"
-	envInsecure = "UCLOUD_SANDBOX_INSECURE"
+	envAPIKey       = "UCLOUD_SANDBOX_API_KEY"
+	envRegion       = "UCLOUD_SANDBOX_REGION"
+	envDomain       = "UCLOUD_SANDBOX_DOMAIN"
+	envInsecureHTTP = "UCLOUD_SANDBOX_INSECURE_HTTP"
 )
 
 // Config holds the CLI configuration.
 type Config struct {
-	APIKey   string `json:"api_key,omitempty"`
-	Region   string `json:"region,omitempty"`
-	Domain   string `json:"domain,omitempty"`
-	Insecure bool   `json:"insecure,omitempty"`
+	APIKey       string `json:"api_key,omitempty"`
+	Region       string `json:"region,omitempty"`
+	Domain       string `json:"domain,omitempty"`
+	InsecureHTTP bool   `json:"insecure_http,omitempty"`
 }
 
 // configPath returns the path to the config file.
@@ -68,12 +68,12 @@ func Load() (*Config, error) {
 	if v := os.Getenv(envDomain); v != "" {
 		cfg.Domain = v
 	}
-	if v, ok := os.LookupEnv(envInsecure); ok && v != "" {
-		insecure, err := strconv.ParseBool(v)
+	if v, ok := os.LookupEnv(envInsecureHTTP); ok && v != "" {
+		insecureHTTP, err := strconv.ParseBool(v)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", envInsecure, err)
+			return nil, fmt.Errorf("parse %s: %w", envInsecureHTTP, err)
 		}
-		cfg.Insecure = insecure
+		cfg.InsecureHTTP = insecureHTTP
 	}
 
 	return cfg, nil
@@ -112,5 +112,5 @@ func NewClient(cfg *Config) (*sandbox.Client, error) {
 		return nil, errors.New("API key is required; set it in config or via UCLOUD_SANDBOX_API_KEY")
 	}
 	domain := resolveDomain(cfg)
-	return sandbox.NewClient(domain, cfg.APIKey, sandbox.WithInsecureHTTP(cfg.Insecure)), nil
+	return sandbox.NewClient(domain, cfg.APIKey, sandbox.WithInsecureHTTP(cfg.InsecureHTTP)), nil
 }

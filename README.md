@@ -39,18 +39,24 @@ export UCLOUD_SANDBOX_API_KEY=your_api_key
 export UCLOUD_SANDBOX_REGION=region
 ```
 
-如需使用 HTTP 而不是 HTTPS 连接控制面和沙箱，可通过环境变量启用 `insecure`：
+如需使用 HTTP 而不是 HTTPS 连接控制面和沙箱，可通过环境变量启用 `insecure_http`：
 
 ```bash
-export UCLOUD_SANDBOX_INSECURE=true
+export UCLOUD_SANDBOX_INSECURE_HTTP=true
 ```
 
 也可以在 `~/.ucloud-sandbox-cli/config.json` 中持久化该配置：
 
 ```json
 {
-  "insecure": true
+  "insecure_http": true
 }
+```
+
+查看当前生效的配置（API Key 会自动脱敏）：
+
+```bash
+ucloud-sandbox-cli config
 ```
 
 API key可以从星图平台的[密钥管理](https://astraflow.ucloud.cn/modelverse/api-keys)获取。

@@ -31,6 +31,7 @@ func newCommand() *cobra.Command {
 	c.AddCommand(cmd.NewLoginCmd())
 	c.AddCommand(cmd.NewLogoutCmd())
 	c.AddCommand(cmd.NewRegionCmd())
+	c.AddCommand(cmd.NewConfigCmd())
 	c.AddCommand(sandboxcmd.NewSandboxCmd())
 	c.AddCommand(fscmd.NewFsCmd())
 	c.AddCommand(snapshotcmd.NewSnapshotCmd())
