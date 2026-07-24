@@ -1,21 +1,30 @@
 ---
 name: ucloud-sandbox
-description: 当用户需要用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、浏览和管理沙箱文件、上传或下载文件、查看端口地址和监控指标、管理快照与模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
+description: 当用户需要在 Linux、macOS 或 Windows 中用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、浏览和管理沙箱文件、上传或下载文件、查看端口地址和监控指标、管理快照与模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
 ---
 
 # UCloud Sandbox CLI
 
 使用 `ucloud-sandbox-cli` 管理 UCloud Sandbox 沙箱、快照和模板。优先用 CLI 完成操作；如果用户只是在询问命令，给出可复制的命令即可。
 
+## 前置检查：公网权限
+
+执行安装、更新或调用 UCloud Sandbox API 前，先确认当前环境允许访问公网。需要网络权限审批时先申请授权；未获授权时停止并说明原因。仅检查本地版本或提供命令说明时无需申请。
+
+## 平台说明
+
+在 Windows 或 PowerShell 环境中，执行安装、更新、认证配置、文件传输或其他 CLI 操作前，先完整阅读并遵循 [Windows PowerShell 指南](references/windows.md)。本页的 Bash 安装、更新和配置脚本仅适用于 Linux 和 macOS。
+
 ## 安装本技能
 
-仅在用户要求“安装这个 skill/技能”时执行。把 `SKILL.md` 放到目标 Agent 的技能目录。可设置 `TARGET_AGENT=codex|claude|gemini|auto`，默认自动检测：
+仅在用户要求“安装这个 skill/技能”时执行。Linux 和 macOS 把 `SKILL.md` 及其引用放到目标 Agent 的技能目录。可设置 `TARGET_AGENT=codex|claude|gemini|auto`，默认自动检测：
 
 ```bash
 set -eu
 
 SKILL_NAME="ucloud-sandbox"
 SKILL_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/SKILL.md"
+WINDOWS_REFERENCE_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/references/windows.md"
 TARGET_AGENT="${TARGET_AGENT:-auto}"
 
 case "$TARGET_AGENT" in
@@ -45,12 +54,13 @@ case "$TARGET_AGENT" in
     ;;
 esac
 
-mkdir -p "$SKILL_DIR"
+mkdir -p "$SKILL_DIR/references"
 curl -fsSL "$SKILL_URL" -o "$SKILL_DIR/SKILL.md"
+curl -fsSL "$WINDOWS_REFERENCE_URL" -o "$SKILL_DIR/references/windows.md"
 echo "ucloud-sandbox skill installed to $SKILL_DIR"
 ```
 
-常见目录：
+Linux 和 macOS 常见目录：
 
 - Codex: `TARGET_AGENT=codex`，目录为 `${CODEX_HOME:-$HOME/.codex}/skills/ucloud-sandbox`
 - Claude Code: `TARGET_AGENT=claude`，目录为 `$HOME/.claude/skills/ucloud-sandbox`
@@ -58,7 +68,9 @@ echo "ucloud-sandbox skill installed to $SKILL_DIR"
 
 ## Step 0：确保 CLI 可用
 
-每次准备执行真实操作前先检查：
+每次准备执行真实操作前先检查。Linux 和 macOS 使用以下 Bash 流程。
+
+### Linux 和 macOS
 
 ```bash
 OLD_NPM_PACKAGE="@ucloud-sdks/ucloud-sandbox-cli"
@@ -113,13 +125,14 @@ ucloud-sandbox-cli version
 
 仅当用户明确要求“更新 skill/技能”或“更新 ucloud-sandbox-cli/命令行”时执行；不要在普通沙箱操作前自动更新。
 
-更新本技能：
+Linux 和 macOS 更新本技能：
 
 ```bash
 set -eu
 
 SKILL_NAME="ucloud-sandbox"
 SKILL_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/SKILL.md"
+WINDOWS_REFERENCE_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/references/windows.md"
 TARGET_AGENT="${TARGET_AGENT:-auto}"
 
 case "$TARGET_AGENT" in
@@ -149,12 +162,13 @@ case "$TARGET_AGENT" in
     ;;
 esac
 
-mkdir -p "$SKILL_DIR"
+mkdir -p "$SKILL_DIR/references"
 curl -fsSL "$SKILL_URL" -o "$SKILL_DIR/SKILL.md"
+curl -fsSL "$WINDOWS_REFERENCE_URL" -o "$SKILL_DIR/references/windows.md"
 echo "ucloud-sandbox skill updated at $SKILL_DIR"
 ```
 
-更新 `ucloud-sandbox-cli` 到最新版本：
+Linux 和 macOS 更新 `ucloud-sandbox-cli` 到最新版本：
 
 ```bash
 curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y
@@ -178,7 +192,7 @@ curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/instal
 
 API Key 可从星图平台密钥管理获取：`https://astraflow.ucloud.cn/modelverse/api-keys`。常用地域包括 `cn-wlcb` 和 `us-ca`；不确定时询问用户。
 
-持久化配置文件路径是 `~/.ucloud-sandbox-cli/config.json`，建议目录权限为 `700`、文件权限为 `600`。配置文件是 JSON，格式如下；展示或读取时必须隐藏 `api_key`：
+持久化配置文件路径是 `~/.ucloud-sandbox-cli/config.json`。Linux 和 macOS 建议目录权限为 `700`、文件权限为 `600`。配置文件是 JSON，格式如下；展示或读取时必须隐藏 `api_key`：
 
 ```json
 {
@@ -213,6 +227,8 @@ export UCLOUD_SANDBOX_REGION="cn-wlcb"
 
 切换持久化地域时，Agent 不执行 `ucloud-sandbox-cli region`，直接修改已有配置文件的 `region` 字段。修改前先确认配置文件存在；如果不存在，提示用户先在真实终端执行 `ucloud-sandbox-cli login`。
 
+Linux 和 macOS：
+
 ```bash
 CONFIG_FILE="$HOME/.ucloud-sandbox-cli/config.json"
 NEW_REGION="cn-wlcb"
@@ -228,9 +244,11 @@ mv "$tmp" "$CONFIG_FILE"
 chmod 600 "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
-如果没有 `jq`，不要用易误伤 `api_key` 的字符串替换方案；请提示用户安装 `jq`，或让用户在真实终端运行 `ucloud-sandbox-cli region` 自行切换。
+Linux 和 macOS 如果没有 `jq`，不要用易误伤 `api_key` 的字符串替换方案；提示用户安装 `jq`，或让用户在真实终端运行 `ucloud-sandbox-cli region` 自行切换。
 
 需要读取配置确认地域或域名时，必须隐藏 `api_key`，不要 `cat ~/.ucloud-sandbox-cli/config.json`。优先只读取必要字段：
+
+Linux 和 macOS：
 
 ```bash
 jq -r '.region // empty' "$HOME/.ucloud-sandbox-cli/config.json"
@@ -243,7 +261,7 @@ jq -r '.domain // empty' "$HOME/.ucloud-sandbox-cli/config.json"
 jq '.api_key = if .api_key then "***hidden***" else . end' "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
-没有 `jq` 时，使用不会输出真实密钥的方式：
+Linux 和 macOS 没有 `jq` 时，使用不会输出真实密钥的方式：
 
 ```bash
 sed -E 's/"api_key"[[:space:]]*:[[:space:]]*"[^"]*"/"api_key": "***hidden***"/' "$HOME/.ucloud-sandbox-cli/config.json"
@@ -535,7 +553,7 @@ ucloud-sandbox-cli sandbox create <template-id-or-name> --detach
 | 现象 | 处理 |
 | --- | --- |
 | `API key is required` | 提示用户在真实终端运行 `ucloud-sandbox-cli login`，或由用户自行设置 `UCLOUD_SANDBOX_API_KEY`；API Key 从星图平台 Key 管理获取 |
-| 命令安装成功但找不到 | 把安装目录加入 `PATH`，例如 `export PATH="$HOME/.local/bin:$PATH"` |
+| 命令安装成功但找不到 | Linux/macOS 使用 `export PATH="$HOME/.local/bin:$PATH"`；Windows 参见 [Windows 故障处理](references/windows.md#故障处理) |
 | 创建沙箱后卡在终端 | Agent/CI 中使用 `sandbox create ... --detach` |
 | `template not found` | 运行 `template list --format json` 确认模板 ID/名称 |
 | `sandbox not found` | 运行 `sandbox list --format json` 确认沙箱仍在运行 |

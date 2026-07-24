@@ -23,7 +23,9 @@ jobs:
           cache: true
 
       - name: Build
-        run: make build
+        run: |
+          make build
+          make build-windows
 
       - name: Test
         run: make test
