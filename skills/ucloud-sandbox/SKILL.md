@@ -17,14 +17,13 @@ description: 当用户需要在 Linux、macOS 或 Windows 中用 UCloud Sandbox 
 
 ## 安装本技能
 
-仅在用户要求“安装这个 skill/技能”时执行。Linux 和 macOS 把 `SKILL.md` 及其引用放到目标 Agent 的技能目录。可设置 `TARGET_AGENT=codex|claude|gemini|auto`，默认自动检测：
+仅在用户要求“安装这个 skill/技能”时执行。Linux 和 macOS 把 `SKILL.md` 放到目标 Agent 的技能目录。可设置 `TARGET_AGENT=codex|claude|gemini|auto`，默认自动检测：
 
 ```bash
 set -eu
 
 SKILL_NAME="ucloud-sandbox"
 SKILL_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/SKILL.md"
-WINDOWS_REFERENCE_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/references/windows.md"
 TARGET_AGENT="${TARGET_AGENT:-auto}"
 
 case "$TARGET_AGENT" in
@@ -54,9 +53,8 @@ case "$TARGET_AGENT" in
     ;;
 esac
 
-mkdir -p "$SKILL_DIR/references"
+mkdir -p "$SKILL_DIR"
 curl -fsSL "$SKILL_URL" -o "$SKILL_DIR/SKILL.md"
-curl -fsSL "$WINDOWS_REFERENCE_URL" -o "$SKILL_DIR/references/windows.md"
 echo "ucloud-sandbox skill installed to $SKILL_DIR"
 ```
 
@@ -132,7 +130,6 @@ set -eu
 
 SKILL_NAME="ucloud-sandbox"
 SKILL_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/SKILL.md"
-WINDOWS_REFERENCE_URL="https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/references/windows.md"
 TARGET_AGENT="${TARGET_AGENT:-auto}"
 
 case "$TARGET_AGENT" in
@@ -162,9 +159,8 @@ case "$TARGET_AGENT" in
     ;;
 esac
 
-mkdir -p "$SKILL_DIR/references"
+mkdir -p "$SKILL_DIR"
 curl -fsSL "$SKILL_URL" -o "$SKILL_DIR/SKILL.md"
-curl -fsSL "$WINDOWS_REFERENCE_URL" -o "$SKILL_DIR/references/windows.md"
 echo "ucloud-sandbox skill updated at $SKILL_DIR"
 ```
 
