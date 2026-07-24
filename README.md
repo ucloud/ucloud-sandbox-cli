@@ -39,17 +39,17 @@ export UCLOUD_SANDBOX_API_KEY=your_api_key
 export UCLOUD_SANDBOX_REGION=region
 ```
 
-如需使用 HTTP 而不是 HTTPS 连接控制面和沙箱，可通过环境变量启用 `insure`：
+如需使用 HTTP 而不是 HTTPS 连接控制面和沙箱，可通过环境变量启用 `insecure`：
 
 ```bash
-export UCLOUD_SANDBOX_INSURE=true
+export UCLOUD_SANDBOX_INSECURE=true
 ```
 
 也可以在 `~/.ucloud-sandbox-cli/config.json` 中持久化该配置：
 
 ```json
 {
-  "insure": true
+  "insecure": true
 }
 ```
 

@@ -27,7 +27,7 @@ func writeConfig(t *testing.T, home string, cfg *Config) {
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAPIKey, envRegion, envDomain, envInsure} {
+	for _, k := range []string{envAPIKey, envRegion, envDomain, envInsecure} {
 		t.Setenv(k, "")
 	}
 }
@@ -35,48 +35,48 @@ func clearEnv(t *testing.T) {
 func TestLoad_FileOnly(t *testing.T) {
 	home := setupHome(t)
 	clearEnv(t)
-	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh", Insure: true})
+	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh", Insecure: true})
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "key1", cfg.APIKey)
 	assert.Equal(t, "cn-sh", cfg.Region)
-	assert.True(t, cfg.Insure)
+	assert.True(t, cfg.Insecure)
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
 	home := setupHome(t)
-	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region", Insure: true})
+	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region", Insecure: true})
 	t.Setenv(envAPIKey, "env-key")
 	t.Setenv(envRegion, "env-region")
 	t.Setenv(envDomain, "env.example.com")
-	t.Setenv(envInsure, "false")
+	t.Setenv(envInsecure, "false")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "env-key", cfg.APIKey)
 	assert.Equal(t, "env-region", cfg.Region)
 	assert.Equal(t, "env.example.com", cfg.Domain)
-	assert.False(t, cfg.Insure)
+	assert.False(t, cfg.Insecure)
 }
 
-func TestLoad_EnvInsureTrue(t *testing.T) {
+func TestLoad_EnvInsecureTrue(t *testing.T) {
 	setupHome(t)
 	clearEnv(t)
-	t.Setenv(envInsure, "true")
+	t.Setenv(envInsecure, "true")
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	assert.True(t, cfg.Insure)
+	assert.True(t, cfg.Insecure)
 }
 
-func TestLoad_InvalidEnvInsure(t *testing.T) {
+func TestLoad_InvalidEnvInsecure(t *testing.T) {
 	setupHome(t)
 	clearEnv(t)
-	t.Setenv(envInsure, "not-a-bool")
+	t.Setenv(envInsecure, "not-a-bool")
 
 	_, err := Load()
-	assert.ErrorContains(t, err, envInsure)
+	assert.ErrorContains(t, err, envInsecure)
 }
 
 func TestLoad_NoFile(t *testing.T) {
@@ -88,13 +88,13 @@ func TestLoad_NoFile(t *testing.T) {
 	assert.Empty(t, cfg.APIKey)
 	assert.Empty(t, cfg.Region)
 	assert.Empty(t, cfg.Domain)
-	assert.False(t, cfg.Insure)
+	assert.False(t, cfg.Insecure)
 }
 
 func TestSave(t *testing.T) {
 	home := setupHome(t)
 
-	in := &Config{APIKey: "save-key", Region: "cn-bj", Insure: true}
+	in := &Config{APIKey: "save-key", Region: "cn-bj", Insecure: true}
 	require.NoError(t, Save(in))
 
 	data, err := os.ReadFile(filepath.Join(home, configDir, configFile))
@@ -103,7 +103,7 @@ func TestSave(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.Equal(t, in.APIKey, out.APIKey)
 	assert.Equal(t, in.Region, out.Region)
-	assert.Equal(t, in.Insure, out.Insure)
+	assert.Equal(t, in.Insecure, out.Insecure)
 }
 
 func TestResolveDomain(t *testing.T) {
