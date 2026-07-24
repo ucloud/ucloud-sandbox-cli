@@ -18,15 +18,23 @@ npm uninstall -g @ucloud-sdks/ucloud-sandbox-cli
 
 如果您之前从未安装过`ucloud-sandbox-cli`，或者没有使用npm安装过，可以跳过这一步。
 
-### 安装CLI
+### 安装 CLI
 
-使用下面的命令安装CLI：
+Linux 和 macOS 使用：
 
 ```bash
 curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh
 ```
 
 安装脚本会要求您确认安装路径（默认为`/usr/local/bin`），直接输入回车可以确认安装，或者您也可以手动输入安装路径。注意请确保安装路径在您的`$PATH`下面以可以直接使用命令行。
+
+Windows 在 PowerShell 中使用：
+
+```powershell
+Invoke-RestMethod https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1 | Invoke-Expression
+```
+
+Windows 安装脚本会自动选择 amd64 或 arm64 版本，默认安装到`%LOCALAPPDATA%\Programs\ucloud-sandbox-cli`，并将该目录加入用户`PATH`。
 
 ## 身份认证与配置
 

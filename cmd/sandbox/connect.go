@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
@@ -18,7 +16,7 @@ func newConnectCmd() *cobra.Command {
 		Use:     "connect <sandbox-id>",
 		Aliases: []string{"conn"},
 		Short:   "Connect to a running sandbox",
-		Args:  cobra.ExactArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
@@ -81,17 +79,8 @@ func connectTerminal(ctx context.Context, sbx *sdk.Sandbox) error {
 		}
 	}()
 
-	// Handle terminal resize.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH)
-	go func() {
-		for range sigCh {
-			if c, r, err := term.GetSize(fd); err == nil {
-				handle.Resize(ctx, sdk.PtySize{Cols: c, Rows: r})
-			}
-		}
-	}()
-	defer signal.Stop(sigCh)
+	stopResize := watchTerminalResize(ctx, fd, handle, cols, rows)
+	defer stopResize()
 
 	handle.Wait()
 	return nil

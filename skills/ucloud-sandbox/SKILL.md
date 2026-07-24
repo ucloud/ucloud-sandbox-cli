@@ -1,6 +1,6 @@
 ---
 name: ucloud-sandbox
-description: 当用户需要用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、浏览和管理沙箱文件、上传或下载文件、查看端口地址和监控指标、管理快照与模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
+description: 当用户需要在 Linux、macOS 或 Windows 中用 UCloud Sandbox CLI 操作沙箱服务时使用，包括安装或配置 ucloud-sandbox-cli、设置 API Key 和地域、创建/连接/执行/暂停/终止沙箱、浏览和管理沙箱文件、上传或下载文件、查看端口地址和监控指标、管理快照与模板，以及在 Claude Code、Codex、Gemini 等 Agent 中安装本技能。
 ---
 
 # UCloud Sandbox CLI
@@ -58,7 +58,9 @@ echo "ucloud-sandbox skill installed to $SKILL_DIR"
 
 ## Step 0：确保 CLI 可用
 
-每次准备执行真实操作前先检查：
+每次准备执行真实操作前先检查。Linux 和 macOS 使用 Bash，Windows 使用 PowerShell。不要在 Windows 中执行 Bash 安装命令。
+
+### Linux 和 macOS
 
 ```bash
 OLD_NPM_PACKAGE="@ucloud-sdks/ucloud-sandbox-cli"
@@ -109,11 +111,35 @@ ucloud-sandbox-cli version
 
 如果提示命令不存在，说明安装目录不在 `PATH` 中。引导用户把安装目录加入 `PATH`。
 
+### Windows PowerShell
+
+检查并卸载旧 npm 版；仅在命令不存在时调用独立 `install.ps1`。卸载需要管理员权限时，让用户在真实终端处理：
+
+```powershell
+if (Get-Command npm -ErrorAction SilentlyContinue) {
+  npm list -g "@ucloud-sdks/ucloud-sandbox-cli" --depth=0 *> $null
+  if ($LASTEXITCODE -eq 0) {
+    npm uninstall -g "@ucloud-sdks/ucloud-sandbox-cli"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to uninstall the old npm CLI." }
+  }
+}
+
+if (-not (Get-Command ucloud-sandbox-cli -CommandType Application -ErrorAction SilentlyContinue)) {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  & ([scriptblock]::Create((Invoke-RestMethod -Uri "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1" -UseBasicParsing -ErrorAction Stop)))
+}
+
+ucloud-sandbox-cli version
+if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
+```
+
+安装脚本默认安装到 `%LOCALAPPDATA%\Programs\ucloud-sandbox-cli` 并更新当前进程和用户 `PATH`。
+
 ## 按需更新 Skill 和 CLI
 
 仅当用户明确要求“更新 skill/技能”或“更新 ucloud-sandbox-cli/命令行”时执行；不要在普通沙箱操作前自动更新。
 
-更新本技能：
+Linux 和 macOS 更新本技能：
 
 ```bash
 set -eu
@@ -154,7 +180,27 @@ curl -fsSL "$SKILL_URL" -o "$SKILL_DIR/SKILL.md"
 echo "ucloud-sandbox skill updated at $SKILL_DIR"
 ```
 
-更新 `ucloud-sandbox-cli` 到最新版本：
+Windows PowerShell 更新本技能。把 `$TargetAgent` 设置为 `codex`、`claude` 或 `gemini`：
+
+```powershell
+$TargetAgent = "codex"
+$CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$SkillRoot = switch ($TargetAgent) {
+  "codex"  { Join-Path $CodexHome "skills" }
+  "claude" { Join-Path $HOME ".claude\skills" }
+  "gemini" { Join-Path $HOME ".gemini\skills" }
+  default   { throw "TargetAgent must be codex, claude, or gemini." }
+}
+$SkillDir = Join-Path $SkillRoot "ucloud-sandbox"
+$SkillUrl = "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/skills/ucloud-sandbox/SKILL.md"
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+New-Item -ItemType Directory -Force -Path $SkillDir | Out-Null
+Invoke-WebRequest -Uri $SkillUrl -OutFile (Join-Path $SkillDir "SKILL.md") -UseBasicParsing -ErrorAction Stop
+"ucloud-sandbox skill updated at $SkillDir"
+```
+
+Linux 和 macOS 更新 `ucloud-sandbox-cli` 到最新版本：
 
 ```bash
 curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y
@@ -174,11 +220,26 @@ ucloud-sandbox-cli version
 curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y -p "$HOME/.local/bin"
 ```
 
+Windows PowerShell 使用独立安装脚本更新。更新到 latest 时保持 `$InstallArgs` 为空；需要指定版本或沿用自定义目录时设置相应字段，可以同时设置：
+
+```powershell
+$InstallArgs = @{
+  # Version = "v1.2.3"
+  # InstallDir = Join-Path $HOME "bin"
+}
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+$InstallerUrl = "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1"
+& ([scriptblock]::Create((Invoke-RestMethod -Uri $InstallerUrl -UseBasicParsing -ErrorAction Stop))) @InstallArgs
+ucloud-sandbox-cli version
+if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
+```
+
 ## Step 1：认证和地域配置
 
 API Key 可从星图平台密钥管理获取：`https://astraflow.ucloud.cn/modelverse/api-keys`。常用地域包括 `cn-wlcb` 和 `us-ca`；不确定时询问用户。
 
-持久化配置文件路径是 `~/.ucloud-sandbox-cli/config.json`，建议目录权限为 `700`、文件权限为 `600`。配置文件是 JSON，格式如下；展示或读取时必须隐藏 `api_key`：
+持久化配置文件路径是 `~/.ucloud-sandbox-cli/config.json`。Linux 和 macOS 建议目录权限为 `700`、文件权限为 `600`；Windows 使用用户配置目录的 ACL。配置文件是 JSON，格式如下；展示或读取时必须隐藏 `api_key`：
 
 ```json
 {
@@ -211,7 +272,17 @@ export UCLOUD_SANDBOX_API_KEY="<api-key>"
 export UCLOUD_SANDBOX_REGION="cn-wlcb"
 ```
 
+Windows PowerShell：
+
+```powershell
+$env:UCLOUD_SANDBOX_API_KEY = "<api-key>"
+$env:UCLOUD_SANDBOX_REGION = "cn-wlcb"
+$env:UCLOUD_SANDBOX_DOMAIN = "cn-wlcb.sandbox.ucloudai.com"
+```
+
 切换持久化地域时，Agent 不执行 `ucloud-sandbox-cli region`，直接修改已有配置文件的 `region` 字段。修改前先确认配置文件存在；如果不存在，提示用户先在真实终端执行 `ucloud-sandbox-cli login`。
+
+Linux 和 macOS：
 
 ```bash
 CONFIG_FILE="$HOME/.ucloud-sandbox-cli/config.json"
@@ -228,13 +299,58 @@ mv "$tmp" "$CONFIG_FILE"
 chmod 600 "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
-如果没有 `jq`，不要用易误伤 `api_key` 的字符串替换方案；请提示用户安装 `jq`，或让用户在真实终端运行 `ucloud-sandbox-cli region` 自行切换。
+Windows PowerShell 使用结构化 JSON API，不要输出 `$Config`。已有标准地域 `domain` 时同步更新，因为它优先于 `region`；检测到自定义域名时停止并先向用户确认：
+
+```powershell
+$ConfigFile = Join-Path $HOME ".ucloud-sandbox-cli\config.json"
+$NewRegion = "cn-wlcb"
+$NewDomain = "$NewRegion.sandbox.ucloudai.com"
+
+if (-not (Test-Path -LiteralPath $ConfigFile -PathType Leaf)) {
+  throw "Config file not found. Run 'ucloud-sandbox-cli login' in a real terminal first."
+}
+
+$Config = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json
+$Config | Add-Member -NotePropertyName "region" -NotePropertyValue $NewRegion -Force
+$ExistingDomain = $Config.PSObject.Properties["domain"]
+if ($ExistingDomain -and -not [string]::IsNullOrWhiteSpace([string]$ExistingDomain.Value)) {
+  if ([string]$ExistingDomain.Value -notmatch '^[a-z0-9-]+\.sandbox\.ucloudai\.com$') {
+    throw "Config uses a custom domain. Confirm it before changing the region."
+  }
+  $ExistingDomain.Value = $NewDomain
+}
+$Json = $Config | ConvertTo-Json -Depth 10
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$TempFile = Join-Path ([IO.Path]::GetDirectoryName($ConfigFile)) "config.$PID.tmp"
+
+try {
+  [IO.File]::WriteAllText($TempFile, $Json, $Utf8NoBom)
+  [IO.File]::Replace($TempFile, $ConfigFile, $null)
+} finally {
+  Remove-Item -LiteralPath $TempFile -Force -ErrorAction SilentlyContinue
+}
+```
+
+Linux 和 macOS 如果没有 `jq`，不要用易误伤 `api_key` 的字符串替换方案；提示用户安装 `jq`，或让用户在真实终端运行 `ucloud-sandbox-cli region` 自行切换。
 
 需要读取配置确认地域或域名时，必须隐藏 `api_key`，不要 `cat ~/.ucloud-sandbox-cli/config.json`。优先只读取必要字段：
+
+Linux 和 macOS：
 
 ```bash
 jq -r '.region // empty' "$HOME/.ucloud-sandbox-cli/config.json"
 jq -r '.domain // empty' "$HOME/.ucloud-sandbox-cli/config.json"
+```
+
+Windows PowerShell：
+
+```powershell
+$ConfigFile = Join-Path $HOME ".ucloud-sandbox-cli\config.json"
+$Config = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json
+$Region = $Config.PSObject.Properties["region"]
+$Domain = $Config.PSObject.Properties["domain"]
+if ($Region) { "region=$($Region.Value)" } else { "region=" }
+if ($Domain) { "domain=$($Domain.Value)" } else { "domain=" }
 ```
 
 如果必须展示配置摘要，先脱敏：
@@ -243,7 +359,17 @@ jq -r '.domain // empty' "$HOME/.ucloud-sandbox-cli/config.json"
 jq '.api_key = if .api_key then "***hidden***" else . end' "$HOME/.ucloud-sandbox-cli/config.json"
 ```
 
-没有 `jq` 时，使用不会输出真实密钥的方式：
+Windows PowerShell：
+
+```powershell
+$ConfigFile = Join-Path $HOME ".ucloud-sandbox-cli\config.json"
+$Summary = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json
+$ApiKey = $Summary.PSObject.Properties["api_key"]
+if ($ApiKey) { $ApiKey.Value = "***hidden***" }
+$Summary | ConvertTo-Json -Depth 10
+```
+
+Linux 和 macOS 没有 `jq` 时，使用不会输出真实密钥的方式：
 
 ```bash
 sed -E 's/"api_key"[[:space:]]*:[[:space:]]*"[^"]*"/"api_key": "***hidden***"/' "$HOME/.ucloud-sandbox-cli/config.json"
@@ -264,6 +390,26 @@ ucloud-sandbox-cli logout
 - 执行破坏性命令前先确认用户意图：`sandbox kill`、`sandbox kill --all`、`fs rm`、`snapshot delete`、`template delete`、`template publish --unpublish`。
 - 不要在回复、日志或命令输出中泄露 API Key；读取 `~/.ucloud-sandbox-cli/config.json` 时必须隐藏 `api_key`，只展示地域、域名等必要字段。
 - 用户要打开交互式终端时，建议让用户在真实终端中运行 `sandbox connect`。
+
+## Windows PowerShell 调用
+
+- 本地使用 PowerShell 和 Windows `.exe`，沙箱内仍然是 Linux Shell。
+- 环境变量写成 `$env:NAME`，不要使用 Bash 的 `export`。
+- 本地路径可以使用 `C:\...`，远端路径仍使用 `/`。
+- 变量后紧跟远端端点冒号时写成 `${SandboxId}:/path`，避免 PowerShell 把冒号解析为变量作用域。
+- 包含 `$`、`$()` 或多行 Shell 的远端命令使用单引号 here-string，并把 CRLF 转换为 LF。
+
+```powershell
+$SandboxId = "<sandbox-id>"
+ucloud-sandbox-cli sandbox exec $SandboxId "pwd && ls -la"
+ucloud-sandbox-cli fs cp "C:\work\index.html" "${SandboxId}:/home/user/app/index.html"
+
+$RemoteCommand = @'
+printf 'HOME=%s\n' "$HOME"
+'@
+$RemoteCommand = $RemoteCommand.Replace("`r`n", "`n")
+ucloud-sandbox-cli sandbox exec $SandboxId $RemoteCommand
+```
 
 ## Sandbox 常用操作
 
@@ -535,7 +681,7 @@ ucloud-sandbox-cli sandbox create <template-id-or-name> --detach
 | 现象 | 处理 |
 | --- | --- |
 | `API key is required` | 提示用户在真实终端运行 `ucloud-sandbox-cli login`，或由用户自行设置 `UCLOUD_SANDBOX_API_KEY`；API Key 从星图平台 Key 管理获取 |
-| 命令安装成功但找不到 | 把安装目录加入 `PATH`，例如 `export PATH="$HOME/.local/bin:$PATH"` |
+| 命令安装成功但找不到 | Linux/macOS 使用 `export PATH="$HOME/.local/bin:$PATH"`；Windows PowerShell 使用 `$env:Path = "<安装目录>;$env:Path"`，并确认安装目录已写入用户 `PATH` |
 | 创建沙箱后卡在终端 | Agent/CI 中使用 `sandbox create ... --detach` |
 | `template not found` | 运行 `template list --format json` 确认模板 ID/名称 |
 | `sandbox not found` | 运行 `sandbox list --format json` 确认沙箱仍在运行 |
