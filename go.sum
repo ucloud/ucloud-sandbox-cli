@@ -26,6 +26,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260626103758-60b4523c8358 h1:q9sQ6a40CRE6CA5aUFUtvyKObVyW3JJZG1WUtziH/4o=
 github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260626103758-60b4523c8358/go.mod h1:097WABFNud50hH2KImyZ8WOJeb0lM2A4+gLvQ1kllsc=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260724023741-905601aa3144 h1:PHVW7cDYIAfl1vv/6qKbvzs52HvhlSW5j1h4DuJO2uc=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260724023741-905601aa3144/go.mod h1:097WABFNud50hH2KImyZ8WOJeb0lM2A4+gLvQ1kllsc=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/sys v0.0.0-20181122145206-62eef0e2fa9b/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.46.0 h1:noSf2Fq6F8DBgS+LysIkx7rIExoNHJsxOAtPp4rthXw=

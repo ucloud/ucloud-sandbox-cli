@@ -27,7 +27,7 @@ func writeConfig(t *testing.T, home string, cfg *Config) {
 
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{envAPIKey, envRegion, envDomain} {
+	for _, k := range []string{envAPIKey, envRegion, envDomain, envInsure} {
 		t.Setenv(k, "")
 	}
 }
@@ -35,26 +35,48 @@ func clearEnv(t *testing.T) {
 func TestLoad_FileOnly(t *testing.T) {
 	home := setupHome(t)
 	clearEnv(t)
-	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh"})
+	writeConfig(t, home, &Config{APIKey: "key1", Region: "cn-sh", Insure: true})
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "key1", cfg.APIKey)
 	assert.Equal(t, "cn-sh", cfg.Region)
+	assert.True(t, cfg.Insure)
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
 	home := setupHome(t)
-	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region"})
+	writeConfig(t, home, &Config{APIKey: "file-key", Region: "file-region", Insure: true})
 	t.Setenv(envAPIKey, "env-key")
 	t.Setenv(envRegion, "env-region")
 	t.Setenv(envDomain, "env.example.com")
+	t.Setenv(envInsure, "false")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "env-key", cfg.APIKey)
 	assert.Equal(t, "env-region", cfg.Region)
 	assert.Equal(t, "env.example.com", cfg.Domain)
+	assert.False(t, cfg.Insure)
+}
+
+func TestLoad_EnvInsureTrue(t *testing.T) {
+	setupHome(t)
+	clearEnv(t)
+	t.Setenv(envInsure, "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.Insure)
+}
+
+func TestLoad_InvalidEnvInsure(t *testing.T) {
+	setupHome(t)
+	clearEnv(t)
+	t.Setenv(envInsure, "not-a-bool")
+
+	_, err := Load()
+	assert.ErrorContains(t, err, envInsure)
 }
 
 func TestLoad_NoFile(t *testing.T) {
@@ -66,12 +88,13 @@ func TestLoad_NoFile(t *testing.T) {
 	assert.Empty(t, cfg.APIKey)
 	assert.Empty(t, cfg.Region)
 	assert.Empty(t, cfg.Domain)
+	assert.False(t, cfg.Insure)
 }
 
 func TestSave(t *testing.T) {
 	home := setupHome(t)
 
-	in := &Config{APIKey: "save-key", Region: "cn-bj"}
+	in := &Config{APIKey: "save-key", Region: "cn-bj", Insure: true}
 	require.NoError(t, Save(in))
 
 	data, err := os.ReadFile(filepath.Join(home, configDir, configFile))
@@ -80,6 +103,7 @@ func TestSave(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &out))
 	assert.Equal(t, in.APIKey, out.APIKey)
 	assert.Equal(t, in.Region, out.Region)
+	assert.Equal(t, in.Insure, out.Insure)
 }
 
 func TestResolveDomain(t *testing.T) {

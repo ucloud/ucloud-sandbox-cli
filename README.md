@@ -32,11 +32,25 @@ curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/instal
 
 ### 环境注入
 
-CLI 会优先读取环境变量中的 API Key和地域。
+CLI 会优先读取环境变量中的 API Key、地域和其他配置。
 
 ```bash
 export UCLOUD_SANDBOX_API_KEY=your_api_key
 export UCLOUD_SANDBOX_REGION=region
+```
+
+如需使用 HTTP 而不是 HTTPS 连接控制面和沙箱，可通过环境变量启用 `insure`：
+
+```bash
+export UCLOUD_SANDBOX_INSURE=true
+```
+
+也可以在 `~/.ucloud-sandbox-cli/config.json` 中持久化该配置：
+
+```json
+{
+  "insure": true
+}
 ```
 
 API key可以从星图平台的[密钥管理](https://astraflow.ucloud.cn/modelverse/api-keys)获取。
