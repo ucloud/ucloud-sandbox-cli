@@ -38,54 +38,30 @@ description: 当用户提供以 `site_` 开头的 UCloud 站点空间 ID，并�
 
 ## 准备并验证 CLI
 
-每次准备执行真实站点操作前，先检查是否存在旧 npm 版 CLI，并验证当前命令。Linux 和 macOS 使用以下流程：
+最低支持版本是 `v1.3.1`。该版本开始让控制面、RPC、文件和流式请求统一继承 `HTTP_PROXY`、`HTTPS_PROXY` 与 `NO_PROXY`；旧版本在受限网络中可能误报 DNS 失败。
+
+### AstraFlow Desktop
+
+如果工具列表中存在 `ensure_ucloud_sandbox_cli`，它是唯一允许的安装与解析入口。执行真实站点操作前，第一个动作调用它，且一次任务最多调用一次：
+
+- 已有合格版本时，它只返回共享 CLI 状态，不弹安装授权。
+- 缺失或低于最低版本时，它只从 `ucloud/ucloud-sandbox-cli` 官方 Release 下载，校验 SHA256 后原子安装到 AstraFlow 的共享托管目录；这一步只申请一次重要操作授权。
+- 托管目录由 Desktop 以只读方式加入 Agent 的 `PATH`，跨会话和重启复用。后续命令始终写 `ucloud-sandbox-cli`，不要保存、猜测或复制工具返回的绝对路径。
+
+使用该工具后，不要再执行 `npm list -g`、`which`、`find $HOME`、`curl | sh`，不要尝试 `/usr/local/bin`、沙箱私有的 `$HOME/.local/bin`，也不要为了找 CLI 切到主机执行。工具失败时保留并报告原始错误，停止站点操作。
+
+### 其他客户端和真实终端
+
+仅当 `ensure_ucloud_sandbox_cli` 不存在时，执行一次 `ucloud-sandbox-cli version`。如果命令不存在或低于 `v1.3.1`，不要在受限 Agent 沙箱内自动安装；请用户在真实终端从官方仓库安装。
+
+只有用户明确要求“真实终端也能直接使用”时，才提供以下独立的用户级安装选项；不要自动执行，也不要使用 sudo 或自动写入 `/usr/local/bin`：
 
 ```bash
-OLD_NPM_PACKAGE="@ucloud-sdks/ucloud-sandbox-cli"
-
-if command -v npm >/dev/null 2>&1 && npm list -g "$OLD_NPM_PACKAGE" --depth=0 >/dev/null 2>&1; then
-  echo "OLD_NPM_CLI_FOUND"
-elif command -v ucloud-sandbox-cli >/dev/null 2>&1; then
-  ucloud-sandbox-cli version
-else
-  echo "NOT_INSTALLED"
-fi
+curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh \
+  | sh -s -- -y -p "$HOME/.local/bin"
 ```
 
-如果输出版本信息，CLI 验证通过，继续连接站点。如果输出 `OLD_NPM_CLI_FOUND`，说明安装的是 v1.0 及以前的 npm 旧版；先卸载旧版，再安装当前二进制版：
-
-```bash
-npm uninstall -g @ucloud-sdks/ucloud-sandbox-cli
-curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y
-ucloud-sandbox-cli version
-```
-
-如果全局 npm 卸载需要管理员权限或交互确认，让用户在真实终端执行卸载命令，不要绕过权限限制。
-
-如果输出 `NOT_INSTALLED`，使用官方安装脚本安装。Agent、CI 等自动化环境使用非交互模式：
-
-```bash
-curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y
-ucloud-sandbox-cli version
-```
-
-需要让用户在真实终端交互安装时，也可以使用：
-
-```bash
-curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh
-```
-
-若默认安装目录不可写，安装到用户目录并把它加入当前 shell 的 `PATH`：
-
-```bash
-curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh | sh -s -- -y -p "$HOME/.local/bin"
-export PATH="$HOME/.local/bin:$PATH"
-ucloud-sandbox-cli version
-```
-
-安装后必须以 `ucloud-sandbox-cli version` 成功作为 CLI 验证标准。安装脚本成功但命令仍不存在时，定位实际安装目录并加入 `PATH`；不要在尚未验证 CLI 时继续站点认证或部署。
-
-本节只安装和验证 `ucloud-sandbox-cli`。不要自动更新已经可正常运行的 CLI，也不要在本技能中安装或更新 `ucloud-sandbox-site` skill 本身。
+本节只准备 `ucloud-sandbox-cli`，不要安装或更新本 Skill 本身。
 
 ## 连接站点
 
@@ -111,13 +87,14 @@ export UCLOUD_SANDBOX_API_KEY="$SITE_ID"
 
 站点所在地域或 API 域名仍由已有 CLI 配置以及 `UCLOUD_SANDBOX_REGION`、`UCLOUD_SANDBOX_DOMAIN` 决定。没有证据时不要擅自切换；连接失败且怀疑地域不符时，向用户确认站点地域。
 
-### 2. 执行无副作用的连接验证
+### 2. 在一次调用中验证连接并检查初始目录
 
 ```bash
-ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" "printf 'SITE_CONNECTED\\n'; pwd"
+ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" \
+  "printf 'SITE_CONNECTED\\n'; pwd; printf 'SITE_HOME\\n'; ls -la /home/user"
 ```
 
-只要这个 `exec` 成功，就认为 AI 已连接站点，可以继续检查文件、生成代码和部署。不要用 `sandbox list` 验证连接。
+只要这个 `exec` 成功，就认为 AI 已连接站点并已完成首次目录检查，可以继续生成代码和部署。不要把连接验证、`pwd` 和初始 `ls` 拆成多个调用，也不要用 `sandbox list` 验证连接。
 
 ## 常用命令
 
@@ -336,3 +313,5 @@ ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" \
 | `exec` 在启动服务后不返回 | 确认服务已后台运行，并把 stdin、stdout、stderr 全部重定向 |
 | 站点内访问 80 端口失败 | 检查 PID、日志、启动命令和监听地址，确认服务监听 `0.0.0.0:80` |
 | `sandbox host` 有输出但页面打不开 | 不要据此宣布成功；先在站点内用 `curl` 验证，再检查进程和日志 |
+| CLI 低于 `v1.3.1` 且出现 DNS/代理错误 | AstraFlow 中只再调用一次 `ensure_ucloud_sandbox_cli` 完成升级；其他客户端请用户在真实终端升级。不要切到主机重复同一站点命令 |
+| CLI 已是 `v1.3.1` 或更高但仍出现 DNS/代理错误 | 保持 Default 沙箱；如平台要求，只申请一次当前会话的网络授权并重试一次。仍失败则报告域名、端口和原始错误，不要继续申请主机执行权限 |

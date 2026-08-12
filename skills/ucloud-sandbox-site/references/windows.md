@@ -22,17 +22,11 @@
 
 ## 检查并安装 CLI
 
-检查并卸载旧 npm 版；仅在命令不存在时调用独立 `install.ps1`。卸载需要管理员权限时，让用户在真实终端处理：
+最低支持版本是 `v1.3.1`。如果 AstraFlow 工具列表中存在 `ensure_ucloud_sandbox_cli`，第一个动作调用它，且一次任务最多调用一次。它负责官方 Release 下载、SHA256 校验、共享托管安装和只读 `PATH` 注入；不要再运行下方脚本，不要搜索用户目录，也不要切到主机寻找 CLI。
+
+仅当该工具不存在时，先执行一次 `ucloud-sandbox-cli version`。命令不存在或版本过低时，让用户在真实 PowerShell 中调用独立 `install.ps1`：
 
 ```powershell
-if (Get-Command npm -ErrorAction SilentlyContinue) {
-  npm list -g "@ucloud-sdks/ucloud-sandbox-cli" --depth=0 *> $null
-  if ($LASTEXITCODE -eq 0) {
-    npm uninstall -g "@ucloud-sdks/ucloud-sandbox-cli"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to uninstall the old npm CLI." }
-  }
-}
-
 if (-not (Get-Command ucloud-sandbox-cli -CommandType Application -ErrorAction SilentlyContinue)) {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $InstallerUrl = "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1"
@@ -43,7 +37,7 @@ ucloud-sandbox-cli version
 if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
 ```
 
-安装脚本默认安装到 `%LOCALAPPDATA%\Programs\ucloud-sandbox-cli`，并更新当前进程和用户 `PATH`；不要自动更新已经可正常运行的 CLI。
+安装脚本默认安装到 `%LOCALAPPDATA%\Programs\ucloud-sandbox-cli`，并更新当前进程和用户 `PATH`。不要从 Agent 自动执行，不要自动更新已经满足最低版本的 CLI。
 如果上述 PowerShell 安装流程失败，保留原始错误并主动查找其他可行安装方式，例如从官方 Release 手动下载与当前架构匹配的 ZIP；先向用户说明方案来源、操作、安装位置和风险，仅在用户明确同意后执行。替代方案只使用 `ucloud/ucloud-sandbox-cli` 官方仓库或官方 Release，并保持 TLS、证书和证书吊销校验；不要关闭安全校验、绕过系统安全策略或改用未经用户确认的第三方来源。若失败源于代理、证书或管理员权限，让用户在真实终端或由管理员处理。完成后确认 `ucloud-sandbox-cli version` 成功，且用户 `PATH` 已包含安装目录；否则不要继续连接站点。
 
 ## 设置站点凭证并验证连接

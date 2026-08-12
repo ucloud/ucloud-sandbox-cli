@@ -159,12 +159,22 @@ download() {
 }
 
 make_tmp_dir() {
-	if has mktemp; then
-		TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t ucloud-sandbox-cli)"
-	else
-		TMP_DIR="/tmp/ucloud-sandbox-cli-install.$$"
-		mkdir -p "$TMP_DIR"
+	if ! has mktemp; then
+		error "mktemp was not found."
+		info "Install mktemp, then run this installer again."
+		exit 1
 	fi
+
+	TMPDIR="${TMPDIR:-/tmp}"
+	if [ ! -d "$TMPDIR" ] || [ ! -w "$TMPDIR" ]; then
+		error "Temporary directory is unavailable: $TMPDIR"
+		exit 1
+	fi
+
+	# Pass an explicit template so both BSD/macOS and GNU mktemp create the
+	# directory under the caller's temporary root. The bare `mktemp -d` form
+	# can ignore TMPDIR on macOS and land in a sandbox-denied system directory.
+	TMP_DIR="$(mktemp -d "${TMPDIR%/}/ucloud-sandbox-cli.XXXXXXXX")"
 }
 
 cleanup() {

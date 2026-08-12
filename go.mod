@@ -8,7 +8,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260811030544-8dd599016a25
+	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260812025714-9a51285e73c9
 	golang.org/x/term v0.44.0
 )
 
