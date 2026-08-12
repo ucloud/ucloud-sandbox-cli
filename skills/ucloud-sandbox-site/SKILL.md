@@ -40,26 +40,22 @@ description: 当用户提供以 `site_` 开头的 UCloud 站点空间 ID，并�
 
 最低支持版本是 `v1.3.1`。该版本开始让控制面、RPC、文件和流式请求统一继承 `HTTP_PROXY`、`HTTPS_PROXY` 与 `NO_PROXY`；旧版本在受限网络中可能误报 DNS 失败。
 
-### AstraFlow Desktop
+先执行一次 `ucloud-sandbox-cli version`。AstraFlow 的本地 Agent `PATH` 包含真实用户的通用 CLI 目录（Linux/macOS 为 `~/.local/bin`），不是每个会话的私有 `$HOME`，也不是 AstraFlow 的 `Application Support` 目录。已满足最低版本时直接继续，不要更新。
 
-如果工具列表中存在 `ensure_ucloud_sandbox_cli`，它是唯一允许的安装与解析入口。执行真实站点操作前，第一个动作调用它，且一次任务最多调用一次：
-
-- 已有合格版本时，它只返回共享 CLI 状态，不弹安装授权。
-- 缺失或低于最低版本时，它只从 `ucloud/ucloud-sandbox-cli` 官方 Release 下载，校验 SHA256 后原子安装到 AstraFlow 的共享托管目录；这一步只申请一次重要操作授权。
-- 托管目录由 Desktop 以只读方式加入 Agent 的 `PATH`，跨会话和重启复用。后续命令始终写 `ucloud-sandbox-cli`，不要保存、猜测或复制工具返回的绝对路径。
-
-使用该工具后，不要再执行 `npm list -g`、`which`、`find $HOME`、`curl | sh`，不要尝试 `/usr/local/bin`、沙箱私有的 `$HOME/.local/bin`，也不要为了找 CLI 切到主机执行。工具失败时保留并报告原始错误，停止站点操作。
-
-### 其他客户端和真实终端
-
-仅当 `ensure_ucloud_sandbox_cli` 不存在时，执行一次 `ucloud-sandbox-cli version`。如果命令不存在或低于 `v1.3.1`，不要在受限 Agent 沙箱内自动安装；请用户在真实终端从官方仓库安装。
-
-只有用户明确要求“真实终端也能直接使用”时，才提供以下独立的用户级安装选项；不要自动执行，也不要使用 sudo 或自动写入 `/usr/local/bin`：
+如果命令不存在或低于 `v1.3.1`，只把官方安装命令安装到真实用户的 `~/.local/bin`。这一步必须作为一个完整命令申请一次主机执行权限；获批后不要再为安装器内部的下载、临时目录或写文件分别申请权限：
 
 ```bash
-curl -sS https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh \
-  | sh -s -- -y -p "$HOME/.local/bin"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ucloud-sandbox-cli.XXXXXXXX")" && \
+trap 'rm -rf "$TMP_DIR"' EXIT && \
+curl -fsSLo "$TMP_DIR/install.sh" \
+  https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.sh && \
+sh "$TMP_DIR/install.sh" -y -p "$HOME/.local/bin" && \
+"$HOME/.local/bin/ucloud-sandbox-cli" version
 ```
+
+不要先尝试 `/usr/local/bin`，不要使用 sudo，不要安装到 Agent 会话的私有 `$HOME`，不要写入或硬编码 AstraFlow 的 `sandbox-workspaces` / `Application Support` 路径，也不要用 `find $HOME` 搜索 CLI。安装完成后回到 Default 沙箱，按命令名 `ucloud-sandbox-cli` 使用；真实用户目录跨会话和重启复用。
+
+Windows 按 [Windows PowerShell 指南](references/windows.md) 使用用户级安装目录；同样把安装与版本验证合并成一次获批的主机命令。
 
 本节只准备 `ucloud-sandbox-cli`，不要安装或更新本 Skill 本身。
 
@@ -313,5 +309,5 @@ ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" \
 | `exec` 在启动服务后不返回 | 确认服务已后台运行，并把 stdin、stdout、stderr 全部重定向 |
 | 站点内访问 80 端口失败 | 检查 PID、日志、启动命令和监听地址，确认服务监听 `0.0.0.0:80` |
 | `sandbox host` 有输出但页面打不开 | 不要据此宣布成功；先在站点内用 `curl` 验证，再检查进程和日志 |
-| CLI 低于 `v1.3.1` 且出现 DNS/代理错误 | AstraFlow 中只再调用一次 `ensure_ucloud_sandbox_cli` 完成升级；其他客户端请用户在真实终端升级。不要切到主机重复同一站点命令 |
+| CLI 低于 `v1.3.1` 且出现 DNS/代理错误 | 按“准备并验证 CLI”只申请一次主机安装命令，将 CLI 升级到真实用户目录；回到 Default 沙箱重试一次，不要切到主机执行站点命令 |
 | CLI 已是 `v1.3.1` 或更高但仍出现 DNS/代理错误 | 保持 Default 沙箱；如平台要求，只申请一次当前会话的网络授权并重试一次。仍失败则报告域名、端口和原始错误，不要继续申请主机执行权限 |

@@ -22,22 +22,26 @@
 
 ## 检查并安装 CLI
 
-最低支持版本是 `v1.3.1`。如果 AstraFlow 工具列表中存在 `ensure_ucloud_sandbox_cli`，第一个动作调用它，且一次任务最多调用一次。它负责官方 Release 下载、SHA256 校验、共享托管安装和只读 `PATH` 注入；不要再运行下方脚本，不要搜索用户目录，也不要切到主机寻找 CLI。
+最低支持版本是 `v1.3.1`。先执行一次 `ucloud-sandbox-cli version`。已满足最低版本时直接继续，不要更新。
 
-仅当该工具不存在时，先执行一次 `ucloud-sandbox-cli version`。命令不存在或版本过低时，让用户在真实 PowerShell 中调用独立 `install.ps1`：
+命令不存在或版本过低时，使用官方 `install.ps1` 安装到真实 Windows 用户的目录，并把下载、安装和版本验证合并为一次获批的主机 PowerShell 命令。不要安装到 AstraFlow `Application Support`/`AppData` 私有数据目录，也不要安装到 Agent 会话目录：
 
 ```powershell
-if (-not (Get-Command ucloud-sandbox-cli -CommandType Application -ErrorAction SilentlyContinue)) {
-  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-  $InstallerUrl = "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1"
-  & ([scriptblock]::Create((Invoke-RestMethod -Uri $InstallerUrl -UseBasicParsing -ErrorAction Stop)))
-}
+$InstallDir = Join-Path $HOME ".local\bin"
+$InstallerPath = Join-Path ([IO.Path]::GetTempPath()) "ucloud-sandbox-cli-$([Guid]::NewGuid().ToString('N')).ps1"
 
-ucloud-sandbox-cli version
-if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ucloud/ucloud-sandbox-cli/main/install.ps1" -OutFile $InstallerPath -UseBasicParsing -ErrorAction Stop
+  & $InstallerPath -InstallDir $InstallDir
+  & (Join-Path $InstallDir "ucloud-sandbox-cli.exe") version
+  if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
+} finally {
+  Remove-Item -LiteralPath $InstallerPath -Force -ErrorAction SilentlyContinue
+}
 ```
 
-安装脚本默认安装到 `%LOCALAPPDATA%\Programs\ucloud-sandbox-cli`，并更新当前进程和用户 `PATH`。不要从 Agent 自动执行，不要自动更新已经满足最低版本的 CLI。
+这里显式覆盖安装器默认值，统一安装到真实用户的 `$HOME\.local\bin`；AstraFlow 只读挂载这个通用用户 CLI 目录。安装本身只允许通过一次明确的主机执行授权完成。
 如果上述 PowerShell 安装流程失败，保留原始错误并主动查找其他可行安装方式，例如从官方 Release 手动下载与当前架构匹配的 ZIP；先向用户说明方案来源、操作、安装位置和风险，仅在用户明确同意后执行。替代方案只使用 `ucloud/ucloud-sandbox-cli` 官方仓库或官方 Release，并保持 TLS、证书和证书吊销校验；不要关闭安全校验、绕过系统安全策略或改用未经用户确认的第三方来源。若失败源于代理、证书或管理员权限，让用户在真实终端或由管理员处理。完成后确认 `ucloud-sandbox-cli version` 成功，且用户 `PATH` 已包含安装目录；否则不要继续连接站点。
 
 ## 设置站点凭证并验证连接
