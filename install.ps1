@@ -112,9 +112,11 @@ $downloadUrl = if ($Version -eq "latest") {
 } else {
     "$releaseBaseUrl/download/$Version/$assetName"
 }
+$checksumUrl = "$downloadUrl.sha256"
 $targetBinary = Join-Path $InstallDir "$BinaryName.exe"
 $tempDir = Join-Path ([IO.Path]::GetTempPath()) "$BinaryName-install-$([Guid]::NewGuid().ToString('N'))"
 $archivePath = Join-Path $tempDir $assetName
+$checksumPath = "$archivePath.sha256"
 $extractDir = Join-Path $tempDir "extract"
 
 Write-Host ""
@@ -135,6 +137,17 @@ try {
 
     Write-Info "Downloading $BinaryName..."
     Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
+    Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing
+
+    Write-Info "Verifying release SHA256..."
+    $expectedHash = (Get-Content -LiteralPath $checksumPath -Raw).Trim().ToLowerInvariant()
+    if ($expectedHash -notmatch "^[0-9a-f]{64}$") {
+        throw "Release checksum must contain exactly 64 hexadecimal characters."
+    }
+    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "SHA256 verification failed for the downloaded release asset."
+    }
 
     Write-Info "Installing $BinaryName to $InstallDir..."
     Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force

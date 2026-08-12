@@ -66,6 +66,12 @@ jobs:
           else
             tar -C bin -czf "dist/ucloud-sandbox-cli_${GOOS}_${GOARCH}.tar.gz" ucloud-sandbox-cli
           fi
+          if [ "$GOOS" = "windows" ]; then
+            asset="dist/ucloud-sandbox-cli_${GOOS}_${GOARCH}.zip"
+          else
+            asset="dist/ucloud-sandbox-cli_${GOOS}_${GOARCH}.tar.gz"
+          fi
+          sha256sum "$asset" | awk '{ print $1 }' > "${asset}.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -74,6 +80,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.sha256
           if-no-files-found: error
 
   release:
@@ -100,7 +107,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "${TAG_NAME}" dist/*.tar.gz dist/*.zip \
+          gh release create "${TAG_NAME}" dist/*.tar.gz dist/*.zip dist/*.sha256 \
             --draft \
             --verify-tag \
             --title "${TAG_NAME}" \

@@ -158,6 +158,40 @@ download() {
 	fi
 }
 
+verify_sha256() {
+	file="$1"
+	checksum_file="$2"
+	expected="$(tr -d '[:space:]' <"$checksum_file" | tr '[:upper:]' '[:lower:]')"
+
+	case "$expected" in
+		*[!0-9a-f]* | "")
+			error "Release checksum is invalid."
+			exit 1
+			;;
+	esac
+	if [ "${#expected}" -ne 64 ]; then
+		error "Release checksum must contain exactly 64 hexadecimal characters."
+		exit 1
+	fi
+
+	if has sha256sum; then
+		actual="$(sha256sum "$file" | awk '{ print $1 }')"
+	elif has shasum; then
+		actual="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+	elif has openssl; then
+		actual="$(openssl dgst -sha256 "$file" | awk '{ print $NF }')"
+	else
+		error "No SHA256 implementation was found (sha256sum, shasum, or openssl)."
+		exit 1
+	fi
+
+	actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+	if [ "$actual" != "$expected" ]; then
+		error "SHA256 verification failed for the downloaded release asset."
+		exit 1
+	fi
+}
+
 make_tmp_dir() {
 	if ! has mktemp; then
 		error "mktemp was not found."
@@ -360,6 +394,7 @@ main() {
 	trap cleanup EXIT INT TERM
 
 	archive="${TMP_DIR}/${BINARY_NAME}.tar.gz"
+	checksum="${archive}.sha256"
 	info "Downloading ${BINARY_NAME}..."
 	if ! download "$archive" "$URL"; then
 		error "Download failed: $URL"
@@ -368,6 +403,12 @@ main() {
 		fi
 		exit 1
 	fi
+	if ! download "$checksum" "${URL}.sha256"; then
+		error "Checksum download failed: ${URL}.sha256"
+		exit 1
+	fi
+	info "Verifying release SHA256..."
+	verify_sha256 "$archive" "$checksum"
 
 	info "Installing ${BINARY_NAME} to ${BIN_DIR}..."
 	install_binary "$archive"
