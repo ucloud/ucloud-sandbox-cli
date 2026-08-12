@@ -22,7 +22,7 @@
 
 ## 检查并安装 CLI
 
-最低支持版本是 `v1.3.1`。先执行一次 `ucloud-sandbox-cli version`。已满足最低版本时直接继续，不要更新。
+最低支持版本是 `v1.3.2`。先执行一次 `ucloud-sandbox-cli version`。已满足最低版本时直接继续，不要更新。
 
 命令不存在或版本过低时，使用官方 `install.ps1` 安装到真实 Windows 用户的目录，并把下载、安装和版本验证合并为一次获批的主机 PowerShell 命令。不要安装到 AstraFlow `Application Support`/`AppData` 私有数据目录，也不要安装到 Agent 会话目录：
 
