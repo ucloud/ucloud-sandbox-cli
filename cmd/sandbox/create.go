@@ -13,6 +13,8 @@ import (
 func newCreateCmd() *cobra.Command {
 	var timeout int
 	var detach bool
+	var autoPause bool
+	var autoResume bool
 	var mountSpecs []string
 
 	cmd := &cobra.Command{
@@ -40,6 +42,12 @@ func newCreateCmd() *cobra.Command {
 			if timeout > 0 {
 				opts = append(opts, sdk.WithTimeout(timeout))
 			}
+			if autoPause {
+				opts = append(opts, sdk.WithAutoPause(true))
+			}
+			if autoResume {
+				opts = append(opts, sdk.WithAutoResume(sdk.AutoResumePolicyOn))
+			}
 			if len(mountSpecs) > 0 {
 				mounts, err := parseVolumeMounts(mountSpecs)
 				if err != nil {
@@ -64,6 +72,8 @@ func newCreateCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&timeout, "timeout", 0, "Sandbox timeout in seconds")
 	cmd.Flags().BoolVar(&detach, "detach", false, "Do not connect to the sandbox after creation")
+	cmd.Flags().BoolVar(&autoPause, "auto-pause", false, "Automatically pause the sandbox when the timeout is reached")
+	cmd.Flags().BoolVar(&autoResume, "auto-resume", false, "Automatically resume the sandbox when it is paused")
 	cmd.Flags().StringArrayVar(&mountSpecs, "mount", nil, "Mount volume as <volume-name>:<path> (repeatable)")
 	return cmd
 }

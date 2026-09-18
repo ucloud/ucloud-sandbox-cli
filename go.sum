@@ -52,6 +52,8 @@ github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260901104032-07e3348267f2 h1:hW
 github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260901104032-07e3348267f2/go.mod h1:YrCrvJEqOBr33ToGyKcFB+ZcTY0EkueE4H0uyqNdsb8=
 github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260910030832-8ef53e9144e2 h1:m9JyzdCMKqQh05bphya4OZLZUb1DIsWDmmqlZeFRtyg=
 github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260910030832-8ef53e9144e2/go.mod h1:YrCrvJEqOBr33ToGyKcFB+ZcTY0EkueE4H0uyqNdsb8=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260918080929-c96bfe4b7c62 h1:Bd6kEbBmOoF5qP1kaKjnKnWMhGKvlmOtBn1Co/xY9N4=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260918080929-c96bfe4b7c62/go.mod h1:YrCrvJEqOBr33ToGyKcFB+ZcTY0EkueE4H0uyqNdsb8=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

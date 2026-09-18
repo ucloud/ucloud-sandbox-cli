@@ -159,6 +159,12 @@ ucloud-sandbox-cli sandbox create base \
   --mount <volume-name-2>:/cache
 ```
 
+开启自动暂停/自动恢复后，沙箱在超时被暂停后，下次访问时会自动恢复运行：
+
+```bash
+ucloud-sandbox-cli sandbox create base --auto-pause --auto-resume --detach
+```
+
 > 创建成功后，CLI 会自动连接终端，您可以像操作本地 Shell 一样执行命令。按`Ctrl+D`或输入`exit`退出连接(沙箱继续运行)。
 
 ### 连接现有沙箱
