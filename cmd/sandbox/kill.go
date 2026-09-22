@@ -7,7 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newKillCmd() *cobra.Command {
@@ -60,13 +61,14 @@ func newKillCmd() *cobra.Command {
 	return cmd
 }
 
-func killAll(ctx context.Context, client *sdk.Client, state string) error {
-	query := &sdk.SandboxQuery{}
-	if state != "" {
-		query.State = []string{state}
+func killAll(ctx context.Context, client *client.Client, state string) error {
+	opts := sandbox.ListV2Options{
+		State: []sandbox.State{
+			sandbox.State(state),
+		},
 	}
 
-	paginator := client.ListSandboxes(ctx, query)
+	paginator := client.Sandboxes().ListV2(ctx, opts)
 	total := 0
 	for paginator.HasNext() {
 		items, err := paginator.NextItems(ctx)
@@ -93,8 +95,8 @@ func killAll(ctx context.Context, client *sdk.Client, state string) error {
 	return nil
 }
 
-func killOne(ctx context.Context, client *sdk.Client, id string) {
-	ok, err := client.KillSandbox(ctx, id)
+func killOne(ctx context.Context, client *client.Client, id string) {
+	ok, err := client.Sandboxes().Kill(ctx, id)
 	if err != nil {
 		fmt.Printf("Error killing sandbox %s: %v\n", id, err)
 		return

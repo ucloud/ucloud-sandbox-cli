@@ -63,7 +63,7 @@ func newDeleteCmd() *cobra.Command {
 			// Delete each
 			for _, id := range targets {
 				fmt.Printf("Deleting template %s...", id)
-				if err := client.DeleteTemplate(ctx, id); err != nil {
+				if _, err := client.Templates().Delete(ctx, id); err != nil {
 					fmt.Printf(" failed: %v\n", err)
 					continue
 				}

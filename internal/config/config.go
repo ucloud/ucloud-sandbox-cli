@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	sandbox "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
 )
 
 const (
@@ -118,10 +118,14 @@ func resolveDomain(cfg *Config) string {
 }
 
 // NewClient validates the config and creates a sandbox client.
-func NewClient(cfg *Config) (*sandbox.Client, error) {
+func NewClient(cfg *Config) (*client.Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("API key is required; set it in config or via UCLOUD_SANDBOX_API_KEY")
 	}
 	domain := resolveDomain(cfg)
-	return sandbox.NewClient(domain, cfg.APIKey, sandbox.WithInsecureHTTP(cfg.InsecureHTTP)), nil
+	return client.New(client.Options{
+		APIKey:       cfg.APIKey,
+		Domain:       domain,
+		InsecureHTTP: cfg.InsecureHTTP,
+	})
 }

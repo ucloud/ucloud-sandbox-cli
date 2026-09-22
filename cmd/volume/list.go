@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume"
 )
 
 // listedVolume is a display-friendly view of VolumeInfo for table rendering.
@@ -16,7 +16,7 @@ type listedVolume struct {
 	Name     string `table_field:"Name"`
 }
 
-func toListedVolume(v sdk.VolumeInfo) listedVolume {
+func toListedVolume(v volume.Info) listedVolume {
 	return listedVolume{
 		VolumeID: v.VolumeID,
 		Name:     v.Name,
@@ -40,7 +40,7 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			volumes, err := client.ListVolumes(cmd.Context())
+			volumes, err := client.Volumes().List(cmd.Context())
 			if err != nil {
 				return err
 			}

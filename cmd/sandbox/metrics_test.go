@@ -6,12 +6,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func TestFormatMetricsDashboard(t *testing.T) {
 	start := time.Date(2026, time.July, 17, 14, 30, 0, 0, time.Local)
-	metrics := []sdk.SandboxMetrics{
+	metrics := []sandbox.Metrics{
 		{
 			Timestamp:  start,
 			CPUCount:   2,
@@ -69,7 +69,7 @@ func TestFormatMetricsDashboard(t *testing.T) {
 }
 
 func TestFormatMetricsNarrowAndUnavailable(t *testing.T) {
-	metrics := []sdk.SandboxMetrics{{
+	metrics := []sandbox.Metrics{{
 		Timestamp:  time.Date(2026, time.July, 17, 14, 30, 0, 0, time.Local),
 		CPUCount:   1,
 		CPUUsedPct: 8.5,
@@ -96,7 +96,7 @@ func TestFormatMetricsNarrowAndUnavailable(t *testing.T) {
 func TestFormatMetricsWideXAxisKeepsEndpointLabels(t *testing.T) {
 	start := time.Date(2026, time.July, 17, 17, 20, 0, 0, time.Local)
 	end := time.Date(2026, time.July, 17, 19, 45, 0, 0, time.Local)
-	metrics := []sdk.SandboxMetrics{
+	metrics := []sandbox.Metrics{
 		{Timestamp: start, CPUUsedPct: 10, MemTotal: 1, DiskTotal: 1},
 		{Timestamp: end, CPUUsedPct: 20, MemTotal: 1, DiskTotal: 1},
 	}
@@ -129,7 +129,7 @@ func TestMetricDisplayRangeUsesLocalTimezone(t *testing.T) {
 	sourceLocation := time.FixedZone("source", 2*60*60)
 	firstInput := time.Date(2026, time.July, 17, 23, 30, 0, 0, sourceLocation)
 	lastInput := firstInput.Add(2 * time.Hour)
-	first, last := metricDisplayRange([]sdk.SandboxMetrics{
+	first, last := metricDisplayRange([]sandbox.Metrics{
 		{Timestamp: firstInput},
 		{Timestamp: lastInput},
 	})

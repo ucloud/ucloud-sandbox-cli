@@ -80,7 +80,7 @@ func newPublishCmd() *cobra.Command {
 			// Publish/unpublish each
 			for _, id := range targets {
 				fmt.Printf("%s template %s...", capitalize(action), id)
-				names, err := client.SetTemplatePublic(ctx, id, !unpublish)
+				names, err := client.Templates().UpdateV2(ctx, id, !unpublish)
 				if err != nil {
 					fmt.Printf(" failed: %v\n", err)
 					continue

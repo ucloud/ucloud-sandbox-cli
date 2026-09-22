@@ -11,36 +11,28 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 // listedTemplate is a display-friendly view of TemplateInfo for table rendering.
 type listedTemplate struct {
+	ID         string    `table_field:"ID"`
 	Names      string    `table_field:"Name"`
-	Status     string    `table_field:"Status"`
 	Visibility string    `table_field:"Access"`
 	CPUCount   int       `table_field:"vCPU"`
 	MemoryMB   int       `table_field:"RAM (MB)"`
 	CreatedAt  time.Time `table_field:"Created"`
 }
 
-func toListedTemplate(t sdk.TemplateInfo) listedTemplate {
+func toListedTemplate(t template.Info) listedTemplate {
 	return listedTemplate{
+		ID:         t.TemplateID,
 		Names:      strings.Join(t.Names, ", "),
-		Status:     buildStatus(t.BuildStatus),
 		Visibility: visibility(t.Public),
 		CPUCount:   t.CPUCount,
 		MemoryMB:   t.MemoryMB,
 		CreatedAt:  t.CreatedAt,
 	}
-}
-
-// buildStatus renders the status of the template's latest build.
-func buildStatus(status string) string {
-	if status == "" {
-		return "-"
-	}
-	return capitalize(status)
 }
 
 func visibility(public bool) string {
@@ -68,15 +60,9 @@ func newListCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			paginator := client.ListTemplates(ctx)
-
-			var templates []sdk.TemplateInfo
-			for paginator.HasNext() {
-				items, err := paginator.NextItems(ctx)
-				if err != nil {
-					return err
-				}
-				templates = append(templates, items...)
+			templates, err := client.Templates().ListV2(ctx, template.ListV2Options{})
+			if err != nil {
+				return err
 			}
 
 			if format == "json" {

@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 // listedEntry is a display-friendly view of EntryInfo for table rendering.
@@ -24,7 +24,7 @@ type listedEntry struct {
 	ModifiedTime time.Time `table_field:"Modified"`
 }
 
-func toListedEntry(e sdk.EntryInfo) listedEntry {
+func toListedEntry(e sandbox.EntryInfo) listedEntry {
 	return listedEntry{
 		Name:         e.Name,
 		Type:         string(e.Type),
@@ -60,26 +60,26 @@ func newLsCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
 
 			// Resolve the path so a file argument lists just that file while a
 			// directory argument lists its entries.
-			info, err := sbx.Files.GetInfo(ctx, path)
+			info, err := sbx.Files.GetInfo(ctx, path, sandbox.FileOptions{})
 			if err != nil {
 				return err
 			}
 
-			var entries []sdk.EntryInfo
-			if info.Type == sdk.EntryTypeDir {
-				entries, err = sbx.Files.List(ctx, path)
+			var entries []sandbox.EntryInfo
+			if info.Type == sandbox.EntryTypeDir {
+				entries, err = sbx.Files.List(ctx, path, sandbox.FileOptions{})
 				if err != nil {
 					return err
 				}
 			} else {
-				entries = []sdk.EntryInfo{*info}
+				entries = []sandbox.EntryInfo{*info}
 			}
 
 			if format == "json" {

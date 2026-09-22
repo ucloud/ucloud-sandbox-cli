@@ -8,8 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/template"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 const (
@@ -127,31 +126,32 @@ func runBuild(name string, flags *buildFlags) error {
 	if err != nil {
 		return err
 	}
-	builder, err := sdk.NewTemplate(sdk.WithFileContextPath(contextPath)).FromDockerfile(dockerfilePath)
+	builder, err := client.Templates().NewBuilder(template.BuilderOptions{
+		FileContextPath: contextPath,
+	}).FromDockerfile(dockerfilePath)
 	if err != nil {
 		return err
 	}
 	if flags.startCmd != "" {
-		builder.SetStartCmd(flags.startCmd, sdk.ReadyCmd{Cmd: flags.readyCmd})
+		builder.SetStartCmd(flags.startCmd, template.ReadyCmd{Cmd: flags.readyCmd})
 	}
-	opts := []sdk.BuildOption{
-		sdk.WithBuildCPUCount(flags.cpuCount),
-		sdk.WithBuildMemoryMB(flags.memoryMB),
-		sdk.WithBuildSkipCache(flags.noCache),
-		sdk.WithOnBuildLogs(sdk.DefaultBuildLoggerWithLevel(flags.logLevel)),
+	opts := template.BuildOptions{
+		CPUCount:  flags.cpuCount,
+		MemoryMB:  flags.memoryMB,
+		SkipCache: flags.noCache,
 	}
 	if len(flags.tags) > 0 {
-		opts = append(opts, sdk.WithBuildTags(flags.tags))
+		opts.Tags = flags.tags
 	}
 	if flags.publish {
-		opts = append(opts, sdk.WithPublishTemplate())
+		opts.Publish = flags.publish
 	}
 	if flags.registryUsername != "" {
-		opts = append(opts, sdk.WithBuildFromImageRegistry(flags.registryUsername, flags.registryPassword))
+		opts.Registry = template.BasicAuth(flags.registryUsername, flags.registryPassword)
 	}
 	fmt.Println("\nBuilding sandbox template...")
 	fmt.Println()
-	info, err := client.BuildTemplate(context.Background(), builder, name, opts...)
+	info, err := client.Templates().Build(context.Background(), builder, name, opts)
 	if err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}

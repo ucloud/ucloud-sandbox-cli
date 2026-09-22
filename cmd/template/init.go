@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/prompt"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/template"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 func newInitCmd() *cobra.Command {

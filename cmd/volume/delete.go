@@ -24,7 +24,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			for _, id := range args {
-				deleted, err := client.DeleteVolume(cmd.Context(), id)
+				deleted, err := client.Volumes().Delete(cmd.Context(), id)
 				if err != nil {
 					return fmt.Errorf("failed to delete volume %s: %w", id, err)
 				}

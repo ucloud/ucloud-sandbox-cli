@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newMvCmd() *cobra.Command {
@@ -24,12 +25,12 @@ func newMvCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
 
-			info, err := sbx.Files.Rename(ctx, args[1], args[2])
+			info, err := sbx.Files.Rename(ctx, args[1], args[2], sandbox.FileOptions{})
 			if err != nil {
 				return err
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newHostCmd() *cobra.Command {
@@ -30,12 +31,12 @@ func newHostCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
 
-			fmt.Println(sbx.GetHost(port))
+			fmt.Println(sbx.Host(port))
 			return nil
 		},
 	}

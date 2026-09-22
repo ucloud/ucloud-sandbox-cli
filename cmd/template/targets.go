@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/manifoldco/promptui"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 // resolveTargets determines which templates to operate on based on args, flags, or interactive selection.
 // Returns: template IDs, optional local config (if loaded), error
-func resolveTargets(ctx context.Context, client *sdk.Client, args []string, path string, selectMode bool) ([]string, *LocalConfig, error) {
+func resolveTargets(ctx context.Context, client *client.Client, args []string, path string, selectMode bool) ([]string, *LocalConfig, error) {
 	// 1. From args
 	if len(args) > 0 {
 		return args, nil, nil
@@ -18,14 +19,9 @@ func resolveTargets(ctx context.Context, client *sdk.Client, args []string, path
 
 	// 2. From interactive selection
 	if selectMode {
-		paginator := client.ListTemplates(ctx)
-		var templates []sdk.TemplateInfo
-		for paginator.HasNext() {
-			items, err := paginator.NextItems(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			templates = append(templates, items...)
+		templates, err := client.Templates().ListV2(ctx, template.ListV2Options{})
+		if err != nil {
+			return nil, nil, err
 		}
 
 		if len(templates) == 0 {

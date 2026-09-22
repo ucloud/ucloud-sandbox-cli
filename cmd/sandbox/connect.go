@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 	"golang.org/x/term"
 )
 
@@ -28,7 +28,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
@@ -40,14 +40,14 @@ func newConnectCmd() *cobra.Command {
 }
 
 // connectTerminal starts an interactive PTY session with the sandbox.
-func connectTerminal(ctx context.Context, sbx *sdk.Sandbox) error {
+func connectTerminal(ctx context.Context, sbx *sandbox.Sandbox) error {
 	fd := int(os.Stdin.Fd())
 	cols, rows, err := term.GetSize(fd)
 	if err != nil {
 		cols, rows = 80, 24
 	}
 
-	handle, err := sbx.Pty.Create(ctx, sdk.PtySize{Cols: cols, Rows: rows})
+	handle, err := sbx.Pty.Create(ctx, sandbox.PtySize{Cols: cols, Rows: rows}, sandbox.CommandOptions{})
 	if err != nil {
 		return err
 	}
@@ -60,8 +60,8 @@ func connectTerminal(ctx context.Context, sbx *sdk.Sandbox) error {
 
 	// Forward PTY output to stdout.
 	go func() {
-		for ev := range handle.Events() {
-			os.Stdout.Write(ev.Data)
+		for data := range handle.Output() {
+			os.Stdout.Write(data)
 		}
 	}()
 
@@ -82,6 +82,6 @@ func connectTerminal(ctx context.Context, sbx *sdk.Sandbox) error {
 	stopResize := watchTerminalResize(ctx, fd, handle, cols, rows)
 	defer stopResize()
 
-	handle.Wait()
+	handle.Wait(ctx)
 	return nil
 }

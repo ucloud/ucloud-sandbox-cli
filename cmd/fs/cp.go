@@ -10,7 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 // remotePath describes a copy endpoint that may point at a sandbox.
@@ -80,13 +81,13 @@ func newCpCmd() *cobra.Command {
 }
 
 // download copies a file from a sandbox to the local filesystem.
-func download(ctx context.Context, client *sdk.Client, src, dest remotePath) error {
-	sbx, err := client.ConnectSandbox(ctx, src.sandboxID)
+func download(ctx context.Context, client *client.Client, src, dest remotePath) error {
+	sbx, err := client.Sandboxes().Connect(ctx, src.sandboxID, sandbox.ConnectOptions{})
 	if err != nil {
 		return err
 	}
 
-	rc, err := sbx.Files.ReadStream(ctx, src.path)
+	rc, err := sbx.Files.ReadStream(ctx, src.path, sandbox.FileOptions{})
 	if err != nil {
 		return err
 	}
@@ -112,8 +113,8 @@ func download(ctx context.Context, client *sdk.Client, src, dest remotePath) err
 }
 
 // upload copies a local file to a sandbox.
-func upload(ctx context.Context, client *sdk.Client, src, dest remotePath) error {
-	sbx, err := client.ConnectSandbox(ctx, dest.sandboxID)
+func upload(ctx context.Context, client *client.Client, src, dest remotePath) error {
+	sbx, err := client.Sandboxes().Connect(ctx, dest.sandboxID, sandbox.ConnectOptions{})
 	if err != nil {
 		return err
 	}
@@ -130,7 +131,7 @@ func upload(ctx context.Context, client *sdk.Client, src, dest remotePath) error
 		remoteDest = path.Join(remoteDest, path.Base(src.path))
 	}
 
-	info, err := sbx.Files.WriteStream(ctx, remoteDest, f)
+	info, err := sbx.Files.WriteStream(ctx, remoteDest, f, sandbox.FileOptions{})
 	if err != nil {
 		return err
 	}

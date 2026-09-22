@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newCreateCmd() *cobra.Command {
@@ -32,18 +32,15 @@ func newCreateCmd() *cobra.Command {
 			ctx := context.Background()
 
 			// Connect to the sandbox first
-			sbx, err := client.ConnectSandbox(ctx, sandboxID)
+			sbx, err := client.Sandboxes().Connect(ctx, sandboxID, sandbox.ConnectOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to connect to sandbox %s: %w", sandboxID, err)
 			}
 
-			var opts []sdk.SnapshotOption
-			if name != "" {
-				opts = append(opts, sdk.WithSnapshotName(name))
-			}
-
 			// Create snapshot from the sandbox
-			snapshot, err := sbx.CreateSnapshot(ctx, opts...)
+			snapshot, err := sbx.CreateSnapshot(ctx, sandbox.SnapshotOptions{
+				Name: name,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create snapshot: %w", err)
 			}

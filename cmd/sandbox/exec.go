@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newExecCmd() *cobra.Command {
@@ -26,14 +26,16 @@ func newExecCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
 
 			result, err := sbx.Commands.Run(ctx, args[1],
-				sdk.WithOnStdout(func(s string) { fmt.Fprint(os.Stdout, s) }),
-				sdk.WithOnStderr(func(s string) { fmt.Fprint(os.Stderr, s) }),
+				sandbox.CommandOptions{
+					OnStdout: func(s string) { fmt.Fprint(os.Stdout, s) },
+					OnStderr: func(s string) { fmt.Fprint(os.Stderr, s) },
+				},
 			)
 			if err != nil {
 				// Print any remaining output before returning the error.

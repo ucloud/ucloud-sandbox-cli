@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
 )
 
 func newDeleteCmd() *cobra.Command {
@@ -39,8 +39,8 @@ func newDeleteCmd() *cobra.Command {
 	return cmd
 }
 
-func deleteOne(ctx context.Context, client *sdk.Client, id string) {
-	err := client.DeleteSnapshot(ctx, id)
+func deleteOne(ctx context.Context, client *client.Client, id string) {
+	_, err := client.Sandboxes().DeleteSnapshot(ctx, id)
 	if err != nil {
 		fmt.Printf("Failed to delete snapshot %s: %v\n", id, err)
 		return

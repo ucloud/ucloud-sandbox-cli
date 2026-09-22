@@ -23,7 +23,7 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			volume, err := client.CreateVolume(cmd.Context(), args[0])
+			volume, err := client.Volumes().Create(cmd.Context(), args[0])
 			if err != nil {
 				return fmt.Errorf("failed to create volume: %w", err)
 			}

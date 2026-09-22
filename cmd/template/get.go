@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 func newGetCmd() *cobra.Command {
@@ -34,7 +34,7 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			tpl, err := client.GetTemplate(cmd.Context(), args[0])
+			tpl, err := client.Templates().Get(cmd.Context(), args[0], template.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -42,7 +42,9 @@ func newGetCmd() *cobra.Command {
 			// The builds of a template are paginated, collect every page so the
 			// output holds the complete build list.
 			for tpl.NextToken != "" {
-				page, err := client.GetTemplate(cmd.Context(), args[0], sdk.WithTemplateBuildsNextToken(tpl.NextToken))
+				page, err := client.Templates().Get(cmd.Context(), args[0], template.GetOptions{
+					NextToken: tpl.NextToken,
+				})
 				if err != nil {
 					return err
 				}

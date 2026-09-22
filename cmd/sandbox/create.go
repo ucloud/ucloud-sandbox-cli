@@ -7,7 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newCreateCmd() *cobra.Command {
@@ -38,25 +39,27 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			opts := []sdk.SandboxOption{sdk.WithTemplate(template)}
+			opts := sandbox.CreateOptions{
+				Template: template,
+			}
 			if timeout > 0 {
-				opts = append(opts, sdk.WithTimeout(timeout))
+				opts.TimeoutSeconds = timeout
 			}
 			if autoPause {
-				opts = append(opts, sdk.WithAutoPause(true))
+				opts.AutoPause = new(true)
 			}
 			if autoResume {
-				opts = append(opts, sdk.WithAutoResume(sdk.AutoResumePolicyOn))
+				opts.AutoResume = new(true)
 			}
 			if len(mountSpecs) > 0 {
 				mounts, err := parseVolumeMounts(mountSpecs)
 				if err != nil {
 					return err
 				}
-				opts = append(opts, sdk.WithVolumeMounts(mounts))
+				opts.VolumeMounts = mounts
 			}
 
-			sbx, err := client.CreateSandbox(ctx, opts...)
+			sbx, err := client.Sandboxes().Create(ctx, opts)
 			if err != nil {
 				return err
 			}
@@ -78,8 +81,8 @@ func newCreateCmd() *cobra.Command {
 	return cmd
 }
 
-func parseVolumeMounts(values []string) ([]sdk.VolumeMount, error) {
-	mounts := make([]sdk.VolumeMount, 0, len(values))
+func parseVolumeMounts(values []string) ([]api.SandboxVolumeMount, error) {
+	mounts := make([]api.SandboxVolumeMount, 0, len(values))
 	for _, value := range values {
 		volumeName, mountPath, ok := strings.Cut(value, ":")
 		if !ok || volumeName == "" || mountPath == "" {
@@ -88,7 +91,7 @@ func parseVolumeMounts(values []string) ([]sdk.VolumeMount, error) {
 		if !strings.HasPrefix(mountPath, "/") {
 			return nil, fmt.Errorf("invalid mount %q: mount path must be absolute", value)
 		}
-		mounts = append(mounts, sdk.VolumeMount{Name: volumeName, Path: mountPath})
+		mounts = append(mounts, api.SandboxVolumeMount{Name: volumeName, Path: mountPath})
 	}
 	return mounts, nil
 }

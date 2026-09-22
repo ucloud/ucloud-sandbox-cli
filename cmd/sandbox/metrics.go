@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/datetime"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 	"golang.org/x/term"
 )
 
@@ -72,7 +72,7 @@ func newMetricsCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			sbx, err := client.ConnectSandbox(ctx, args[0])
+			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
 			if err != nil {
 				return err
 			}
@@ -93,18 +93,18 @@ func newMetricsCmd() *cobra.Command {
 	return cmd
 }
 
-func fetchMetrics(ctx context.Context, sbx *sdk.Sandbox, start, end time.Time) ([]sdk.SandboxMetrics, error) {
-	var opts []sdk.MetricsOption
+func fetchMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time) ([]sandbox.Metrics, error) {
+	var opts sandbox.MetricsOptions
 	if !start.IsZero() {
-		opts = append(opts, sdk.WithMetricsStart(start))
+		opts.StartUnix = start.Unix()
 	}
 	if !end.IsZero() {
-		opts = append(opts, sdk.WithMetricsEnd(end))
+		opts.EndUnix = end.Unix()
 	}
-	return sbx.GetMetrics(ctx, opts...)
+	return sbx.Metrics(ctx, opts)
 }
 
-func renderMetrics(metrics []sdk.SandboxMetrics, sandboxID string) {
+func renderMetrics(metrics []sandbox.Metrics, sandboxID string) {
 	width := terminalWidth()
 	if width == 0 {
 		width = defaultMetricsWidth
@@ -125,7 +125,7 @@ func terminalWidth() int {
 // formatMetrics renders a width-constrained metrics dashboard. Keeping this
 // separate from renderMetrics makes the layout deterministic for tests and
 // prevents chart libraries from expanding to the number of samples.
-func formatMetrics(metrics []sdk.SandboxMetrics, sandboxID string, width int) string {
+func formatMetrics(metrics []sandbox.Metrics, sandboxID string, width int) string {
 	if width <= 0 {
 		width = defaultMetricsWidth
 	}
@@ -179,7 +179,7 @@ func formatMetrics(metrics []sdk.SandboxMetrics, sandboxID string, width int) st
 	return b.String()
 }
 
-func metricDisplayRange(metrics []sdk.SandboxMetrics) (time.Time, time.Time) {
+func metricDisplayRange(metrics []sandbox.Metrics) (time.Time, time.Time) {
 	first := metrics[0].Timestamp
 	last := metrics[len(metrics)-1].Timestamp
 	if !first.IsZero() {
@@ -236,7 +236,7 @@ func (m metricSeries) usageLine(width int) string {
 	return line
 }
 
-func buildMetricSeries(metrics []sdk.SandboxMetrics) []metricSeries {
+func buildMetricSeries(metrics []sandbox.Metrics) []metricSeries {
 	latest := metrics[len(metrics)-1]
 	cpu := make([]float64, len(metrics))
 	memory := make([]float64, len(metrics))
@@ -383,7 +383,7 @@ func metricsXAxisLayout(plotWidth int, first, last time.Time) (string, int) {
 	return formats[len(formats)-1], 2
 }
 
-func showMetrics(ctx context.Context, sbx *sdk.Sandbox, start, end time.Time, raw bool) error {
+func showMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time, raw bool) error {
 	metrics, err := fetchMetrics(ctx, sbx, start, end)
 	if err != nil {
 		return err
@@ -395,7 +395,7 @@ func showMetrics(ctx context.Context, sbx *sdk.Sandbox, start, end time.Time, ra
 	return nil
 }
 
-func watchMetrics(ctx context.Context, sbx *sdk.Sandbox, start, end time.Time, interval time.Duration, raw bool) error {
+func watchMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time, interval time.Duration, raw bool) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)

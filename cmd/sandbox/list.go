@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 // listedSandbox is a display-friendly view of SandboxInfo for table rendering.
@@ -25,12 +25,12 @@ type listedSandbox struct {
 	MemoryMB   int       `table_field:"RAM (MB)"`
 }
 
-func toListedSandbox(s sdk.SandboxInfo) listedSandbox {
+func toListedSandbox(s sandbox.Info) listedSandbox {
 	return listedSandbox{
 		SandboxID:  s.SandboxID,
 		TemplateID: s.TemplateID,
 		Name:       s.Name,
-		State:      s.State,
+		State:      string(s.State),
 		StartedAt:  s.StartedAt,
 		EndAt:      s.EndAt,
 		CPUCount:   s.CPUCount,
@@ -57,13 +57,13 @@ func newListCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			query := &sdk.SandboxQuery{}
+			opts := sandbox.ListV2Options{}
 			if state != "" {
-				query.State = []string{state}
+				opts.State = []sandbox.State{sandbox.State(state)}
 			}
 
-			paginator := client.ListSandboxes(ctx, query)
-			var sandboxes []sdk.SandboxInfo
+			paginator := client.Sandboxes().ListV2(ctx, opts)
+			var sandboxes []sandbox.Info
 			for paginator.HasNext() {
 				items, err := paginator.NextItems(ctx)
 				if err != nil {

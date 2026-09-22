@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 func newPauseCmd() *cobra.Command {
@@ -24,7 +25,7 @@ func newPauseCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			if err := client.PauseSandbox(ctx, args[0]); err != nil {
+			if err := client.Sandboxes().Pause(ctx, args[0], sandbox.PauseOptions{}); err != nil {
 				return err
 			}
 			fmt.Printf("Sandbox %s paused.\n", args[0])

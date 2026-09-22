@@ -55,7 +55,7 @@ func newTagAssignCmd() *cobra.Command {
 				return err
 			}
 
-			assigned, err := client.AssignTemplateTags(cmd.Context(), args[0], args[1:])
+			assigned, err := client.Templates().AssignTags(cmd.Context(), args[0], args[1:])
 			if err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ func newTagRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteTemplateTags(cmd.Context(), args[0], args[1:]); err != nil {
+			if err := client.Templates().DeleteTags(cmd.Context(), args[0], args[1:]); err != nil {
 				return err
 			}
 			fmt.Printf("Removed tags %s from template %s.\n", strings.Join(args[1:], ", "), args[0])
@@ -139,7 +139,7 @@ func newTagListCmd() *cobra.Command {
 				return err
 			}
 
-			tags, err := client.ListTemplateTags(cmd.Context(), args[0])
+			tags, err := client.Templates().ListTags(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}

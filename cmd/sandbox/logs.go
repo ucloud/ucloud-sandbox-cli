@@ -13,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/errdefs"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 const (
@@ -63,34 +65,28 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-// sandboxLogsClient is the client subset used to read sandbox logs.
-type sandboxLogsClient interface {
-	GetSandboxLogs(ctx context.Context, sandboxID string, opts ...sdk.SandboxLogsOption) ([]sdk.SandboxLogEntry, error)
-	GetSandboxInfo(ctx context.Context, sandboxID string) (*sdk.SandboxInfo, error)
-}
-
-func printSandboxLogs(ctx context.Context, client sandboxLogsClient, sandboxID, level, search string, follow bool) error {
+func printSandboxLogs(ctx context.Context, client *client.Client, sandboxID, level, search string, follow bool) error {
 	cursor := newSandboxLogsCursor()
 	// draining is the final pass after the sandbox stopped, so that entries
 	// written just before the end are still reported.
 	draining := false
 
 	for {
-		opts := []sdk.SandboxLogsOption{
-			sdk.WithSandboxLogsLimit(sandboxLogsPageSize),
-			sdk.WithSandboxLogsDirection(sdk.LogsDirectionForward),
+		opts := sandbox.LogsV2Options{
+			Limit:     sandboxLogsPageSize,
+			Direction: sandbox.LogsDirectionForward,
 		}
 		if cursor.ms > 0 {
-			opts = append(opts, sdk.WithSandboxLogsCursor(cursor.ms))
+			opts.CursorMs = new(cursor.ms)
 		}
 		if level != "" {
-			opts = append(opts, sdk.WithSandboxLogsLevel(level))
+			opts.Level = level
 		}
 		if search != "" {
-			opts = append(opts, sdk.WithSandboxLogsSearch(search))
+			opts.Search = search
 		}
 
-		page, err := client.GetSandboxLogs(ctx, sandboxID, opts...)
+		page, err := client.Sandboxes().LogsV2(ctx, sandboxID, opts)
 		if err != nil {
 			return err
 		}
@@ -122,16 +118,16 @@ func printSandboxLogs(ctx context.Context, client sandboxLogsClient, sandboxID, 
 
 // isSandboxRunning reports whether the sandbox still produces logs. A sandbox
 // that no longer exists counts as stopped rather than as an error.
-func isSandboxRunning(ctx context.Context, client sandboxLogsClient, sandboxID string) (bool, error) {
-	info, err := client.GetSandboxInfo(ctx, sandboxID)
+func isSandboxRunning(ctx context.Context, client *client.Client, sandboxID string) (bool, error) {
+	info, err := client.Sandboxes().Get(ctx, sandboxID)
 	if err != nil {
-		var notFound *sdk.NotFoundError
+		var notFound *errdefs.NotFoundError
 		if errors.As(err, &notFound) {
 			return false, nil
 		}
 		return false, err
 	}
-	return strings.EqualFold(info.State, "running"), nil
+	return strings.EqualFold(string(info.State), "running"), nil
 }
 
 // sandboxLogsCursor tracks the forward pagination position of sandbox logs. The
@@ -150,12 +146,12 @@ func newSandboxLogsCursor() *sandboxLogsCursor {
 // advance returns the entries of page that have not been reported yet and
 // whether another page should be requested right away. pageFull tells whether
 // the page reached the requested limit, meaning more entries may be waiting.
-func (c *sandboxLogsCursor) advance(page []sdk.SandboxLogEntry, pageFull bool) ([]sdk.SandboxLogEntry, bool) {
+func (c *sandboxLogsCursor) advance(page []sandbox.LogEntry, pageFull bool) ([]sandbox.LogEntry, bool) {
 	if len(page) == 0 {
 		return nil, false
 	}
 
-	fresh := make([]sdk.SandboxLogEntry, 0, len(page))
+	fresh := make([]sandbox.LogEntry, 0, len(page))
 	for _, entry := range page {
 		ms := entry.Timestamp.UnixMilli()
 		if ms < c.ms {
@@ -190,7 +186,7 @@ func (c *sandboxLogsCursor) advance(page []sdk.SandboxLogEntry, pageFull bool) (
 	return fresh, pageFull
 }
 
-func sandboxLogSignature(entry sdk.SandboxLogEntry) string {
+func sandboxLogSignature(entry sandbox.LogEntry) string {
 	var b strings.Builder
 	b.WriteString(entry.Level)
 	b.WriteString("\x00")
@@ -205,7 +201,7 @@ func sandboxLogSignature(entry sdk.SandboxLogEntry) string {
 }
 
 // formatSandboxLogEntry renders one entry as "<timestamp> [<level>] <message> <key=value...>".
-func formatSandboxLogEntry(entry sdk.SandboxLogEntry) string {
+func formatSandboxLogEntry(entry sandbox.LogEntry) string {
 	var b strings.Builder
 	b.WriteString(entry.Timestamp.In(time.Local).Format(sandboxLogTimeFormat))
 	if entry.Level != "" {

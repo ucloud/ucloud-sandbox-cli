@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 // listedSnapshot is a display-friendly view of SnapshotInfo for table rendering.
@@ -19,7 +19,7 @@ type listedSnapshot struct {
 	Names      string `table_field:"Names"`
 }
 
-func toListedSnapshot(s sdk.SnapshotInfo) listedSnapshot {
+func toListedSnapshot(s sandbox.SnapshotInfo) listedSnapshot {
 	names := "-"
 	if len(s.Names) > 0 {
 		names = strings.Join(s.Names, ", ")
@@ -50,13 +50,10 @@ func newListCmd() *cobra.Command {
 
 			ctx := context.Background()
 
-			var sandboxIDPtr *string
-			if sandboxID != "" {
-				sandboxIDPtr = &sandboxID
-			}
-
-			paginator := client.ListSnapshots(ctx, sandboxIDPtr)
-			var snapshots []sdk.SnapshotInfo
+			paginator := client.Sandboxes().ListSnapshots(ctx, sandbox.ListSnapshotsOptions{
+				SandboxID: sandboxID,
+			})
+			var snapshots []sandbox.SnapshotInfo
 			for paginator.HasNext() {
 				items, err := paginator.NextItems(ctx)
 				if err != nil {

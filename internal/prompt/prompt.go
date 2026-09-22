@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/manifoldco/promptui"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/template"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 var predefinedRegions = []string{"cn-wlcb", "cn-sh", "us-ca"}

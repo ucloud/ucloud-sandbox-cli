@@ -8,7 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	sdk "github.com/ucloud/ucloud-sandbox-sdk-go"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
 )
 
 const (
@@ -51,26 +52,21 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-// buildLogsFetcher is the client subset used to read build logs.
-type buildLogsFetcher interface {
-	GetTemplateBuildLogs(ctx context.Context, templateID, buildID string, opts ...sdk.BuildLogsOption) ([]sdk.BuildLogEntry, error)
-}
-
-func printBuildLogs(ctx context.Context, client buildLogsFetcher, templateID, buildID, level string) error {
+func printBuildLogs(ctx context.Context, client *client.Client, templateID, buildID, level string) error {
 	cursor := newBuildLogsCursor()
 	for {
-		opts := []sdk.BuildLogsOption{
-			sdk.WithBuildLogsLimit(buildLogsPageSize),
-			sdk.WithBuildLogsDirection(sdk.LogsDirectionForward),
+		opts := template.BuildLogsOptions{
+			Limit:     buildLogsPageSize,
+			Direction: template.LogsDirectionForward,
 		}
 		if cursor.ms > 0 {
-			opts = append(opts, sdk.WithBuildLogsCursor(cursor.ms))
+			opts.CursorMs = new(cursor.ms)
 		}
 		if level != "" {
-			opts = append(opts, sdk.WithBuildLogsLevel(level))
+			opts.Level = template.LogLevel(level)
 		}
 
-		page, err := client.GetTemplateBuildLogs(ctx, templateID, buildID, opts...)
+		page, err := client.Templates().BuildLogs(ctx, templateID, buildID, opts)
 		if err != nil {
 			return err
 		}
@@ -101,12 +97,12 @@ func newBuildLogsCursor() *buildLogsCursor {
 // advance returns the entries of page that have not been reported yet and
 // whether another page should be requested. pageFull tells whether the page
 // reached the requested limit, meaning more entries may be waiting.
-func (c *buildLogsCursor) advance(page []sdk.BuildLogEntry, pageFull bool) ([]sdk.BuildLogEntry, bool) {
+func (c *buildLogsCursor) advance(page []template.LogEntry, pageFull bool) ([]template.LogEntry, bool) {
 	if len(page) == 0 {
 		return nil, false
 	}
 
-	fresh := make([]sdk.BuildLogEntry, 0, len(page))
+	fresh := make([]template.LogEntry, 0, len(page))
 	for _, entry := range page {
 		ms := entry.Timestamp.UnixMilli()
 		if ms < c.ms {
@@ -145,17 +141,17 @@ func (c *buildLogsCursor) advance(page []sdk.BuildLogEntry, pageFull bool) ([]sd
 	return fresh, true
 }
 
-func buildLogSignature(entry sdk.BuildLogEntry) string {
-	return entry.Level + "\x00" + entry.Step + "\x00" + entry.Message
+func buildLogSignature(entry template.LogEntry) string {
+	return string(entry.Level) + "\x00" + entry.Step + "\x00" + entry.Message
 }
 
 // formatBuildLogEntry renders one entry as "<timestamp> [<level>] [<step>] <message>".
-func formatBuildLogEntry(entry sdk.BuildLogEntry) string {
+func formatBuildLogEntry(entry template.LogEntry) string {
 	var b strings.Builder
 	b.WriteString(entry.Timestamp.In(time.Local).Format(buildLogTimeFormat))
 	if entry.Level != "" {
 		b.WriteString(" [")
-		b.WriteString(strings.ToUpper(entry.Level))
+		b.WriteString(strings.ToUpper(string(entry.Level)))
 		b.WriteString("]")
 	}
 	if entry.Step != "" {
