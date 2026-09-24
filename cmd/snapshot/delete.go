@@ -1,49 +1,45 @@
 package snapshot
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 )
 
-func newDeleteCmd() *cobra.Command {
-	cmd := &cobra.Command{
+type deleteOperation struct{}
+
+func (o *deleteOperation) Command() *cobra.Command {
+	return &cobra.Command{
 		Use:     "delete <snapshot-id...>",
-		Aliases: []string{"dl"},
+		Aliases: []string{"dl", "rm"},
 		Short:   "Delete one or more snapshots",
 		Args:    cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-
-			// Delete each snapshot sequentially
-			for _, id := range args {
-				deleteOne(ctx, client, id)
-			}
-
-			return nil
-		},
 	}
-
-	return cmd
 }
 
-func deleteOne(ctx context.Context, client *client.Client, id string) {
-	_, err := client.Sandboxes().DeleteSnapshot(ctx, id)
-	if err != nil {
-		fmt.Printf("Failed to delete snapshot %s: %v\n", id, err)
-		return
+func (o *deleteOperation) Run(ctx cmd.OperationContext) error {
+	// Deleting stops at the first failure, so a broken run does not keep
+	// destroying snapshots.
+	total := 0
+	for _, id := range ctx.Args {
+		// This takes every build of the snapshot with it.
+		deleted, err := ctx.Client.Sandboxes().DeleteSnapshot(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete snapshot %s: %w", id, err)
+		}
+
+		// A snapshot that is already gone satisfies the intent.
+		if !deleted {
+			fmt.Printf("Snapshot %s not found.\n", id)
+			continue
+		}
+
+		total++
+		fmt.Printf("Snapshot %s deleted.\n", id)
 	}
-	fmt.Printf("Deleted snapshot: %s\n", id)
+
+	fmt.Printf("Deleted %d snapshot(s).\n", total)
+
+	return nil
 }

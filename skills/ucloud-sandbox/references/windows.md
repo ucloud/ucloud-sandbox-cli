@@ -97,7 +97,13 @@ if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
 
 ## 认证和配置
 
-配置文件位于 `~/.ucloud-sandbox-cli/config.json`，使用用户配置目录的 ACL。不要输出真实 `api_key`。
+配置文件位于 `~/.ucloud-sandbox-cli/config.json`，使用用户配置目录的 ACL。不要输出真实 `api_key`，也不要输出 `registries` 里任何仓库的 `password`。
+
+查看配置优先用 CLI，它输出 JSON 并已经把 `api_key` 和每个仓库的 `password` 替换成 `****`：
+
+```powershell
+ucloud-sandbox-cli auth config
+```
 
 临时使用环境变量时，让用户在自己的终端设置：
 
@@ -105,6 +111,12 @@ if ($LASTEXITCODE -ne 0) { throw "ucloud-sandbox-cli verification failed." }
 $env:UCLOUD_SANDBOX_API_KEY = "<api-key>"
 $env:UCLOUD_SANDBOX_REGION = "cn-wlcb"
 $env:UCLOUD_SANDBOX_DOMAIN = "cn-wlcb.sandbox.ucloudai.com"
+```
+
+私有仓库凭据按仓库域名保存在配置的 `registries` 下，让用户在真实终端执行 `ucloud-sandbox-cli auth registry login <domain>` 配置；需要在 CI 中注入时用同形状的 JSON：
+
+```powershell
+$env:UCLOUD_SANDBOX_REGISTRIES = '{"uhub.service.ucloud.cn":{"username":"<username>","password":"<password>"}}'
 ```
 
 切换持久化地域时使用结构化 JSON API，不要输出 `$Config`。已有标准地域 `domain` 时同步更新，因为它优先于 `region`；检测到自定义域名时停止并先向用户确认：
@@ -115,7 +127,7 @@ $NewRegion = "cn-wlcb"
 $NewDomain = "$NewRegion.sandbox.ucloudai.com"
 
 if (-not (Test-Path -LiteralPath $ConfigFile -PathType Leaf)) {
-  throw "Config file not found. Run 'ucloud-sandbox-cli login' in a real terminal first."
+  throw "Config file not found. Run 'ucloud-sandbox-cli auth login' in a real terminal first."
 }
 
 $Config = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -150,13 +162,20 @@ if ($Region) { "region=$($Region.Value)" } else { "region=" }
 if ($Domain) { "domain=$($Domain.Value)" } else { "domain=" }
 ```
 
-必须展示配置摘要时先脱敏：
+必须自己读文件展示摘要时先脱敏，`api_key` 和每个仓库的 `password` 都要遮住（优先改用 `ucloud-sandbox-cli auth config`，它已经做了这件事）：
 
 ```powershell
 $ConfigFile = Join-Path $HOME ".ucloud-sandbox-cli\config.json"
 $Summary = Get-Content -LiteralPath $ConfigFile -Raw -ErrorAction Stop | ConvertFrom-Json
 $ApiKey = $Summary.PSObject.Properties["api_key"]
 if ($ApiKey) { $ApiKey.Value = "***hidden***" }
+$Registries = $Summary.PSObject.Properties["registries"]
+if ($Registries -and $Registries.Value) {
+  foreach ($Entry in $Registries.Value.PSObject.Properties) {
+    $Password = $Entry.Value.PSObject.Properties["password"]
+    if ($Password) { $Password.Value = "***hidden***" }
+  }
+}
 $Summary | ConvertTo-Json -Depth 10
 ```
 
@@ -169,7 +188,7 @@ $Summary | ConvertTo-Json -Depth 10
 $SandboxId = "<sandbox-id>"
 $VolumeName = "workspace"
 ucloud-sandbox-cli sandbox exec $SandboxId "pwd && ls -la"
-ucloud-sandbox-cli fs cp "C:\work\index.html" "${SandboxId}:/home/user/app/index.html"
+ucloud-sandbox-cli sandbox fs cp "C:\work\index.html" "${SandboxId}:/home/user/app/index.html"
 ucloud-sandbox-cli sandbox create base --mount "${VolumeName}:/data" --detach
 
 $RemoteCommand = @'

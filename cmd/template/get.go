@@ -1,60 +1,37 @@
 package template
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 )
 
-func newGetCmd() *cobra.Command {
-	return &cobra.Command{
+type getOperation struct {
+	params api.TemplateGetParams
+}
+
+func (o *getOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "get <template-id>",
-		Aliases: []string{"show"},
-		Short:   "Show template details with its builds as JSON",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf("template is required")
-			}
-			if len(args) > 1 {
-				return fmt.Errorf("only one template can be specified")
-			}
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			tpl, err := client.Templates().Get(cmd.Context(), args[0], template.GetOptions{})
-			if err != nil {
-				return err
-			}
-
-			// The builds of a template are paginated, collect every page so the
-			// output holds the complete build list.
-			for tpl.NextToken != "" {
-				page, err := client.Templates().Get(cmd.Context(), args[0], template.GetOptions{
-					NextToken: tpl.NextToken,
-				})
-				if err != nil {
-					return err
-				}
-				tpl.Builds = append(tpl.Builds, page.Builds...)
-				tpl.NextToken = page.NextToken
-			}
-
-			encoder := json.NewEncoder(os.Stdout)
-			encoder.SetIndent("", "  ")
-			return encoder.Encode(tpl)
-		},
+		Aliases: []string{"show", "info"},
+		Short:   "Show a template with its first page of builds",
+		Args:    cobra.ExactArgs(1),
 	}
+
+	flags.NullableInt32VarP(c.Flags(), &o.params.Limit, "limit", "l", "Maximum number of builds to return")
+
+	return c
+}
+
+func (o *getOperation) Run(ctx cmd.OperationContext) error {
+	// Only the first page of builds: the endpoint returns the cursor for the
+	// next one in a header the SDK does not surface, so there is nothing to
+	// page with. --limit is how you widen the page.
+	tpl, err := ctx.Client.Templates().Get(ctx, ctx.Args[0], &o.params)
+	if err != nil {
+		return err
+	}
+
+	return cmd.ShowJSON(tpl)
 }

@@ -1,73 +1,57 @@
 package volume
 
 import (
-	"encoding/json"
-	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/list"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 )
 
-// listedVolume is a display-friendly view of VolumeInfo for table rendering.
+type listOperation struct {
+	list list.Options
+}
+
+func (o *listOperation) Command() *cobra.Command {
+	c := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List volumes",
+		Args:    cobra.NoArgs,
+	}
+
+	o.list.AddFlags(c)
+
+	return c
+}
+
+// listedVolume is a display-friendly view of api.Volume for table rendering.
 type listedVolume struct {
 	VolumeID string `table_field:"Volume ID"`
 	Name     string `table_field:"Name"`
 }
 
-func toListedVolume(v volume.Info) listedVolume {
+func toListedVolume(v api.Volume) listedVolume {
 	return listedVolume{
 		VolumeID: v.VolumeID,
 		Name:     v.Name,
 	}
 }
 
-func newListCmd() *cobra.Command {
-	var format string
-
-	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List volumes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			volumes, err := client.Volumes().List(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			if format == "json" {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(volumes)
-			}
-
-			if len(volumes) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No volumes found.")
-				return nil
-			}
-
-			rows := make([]listedVolume, len(volumes))
-			for i, volume := range volumes {
-				rows[i] = toListedVolume(volume)
-			}
-
-			out, err := table.Render(rows, 1, 0, int64(len(rows)))
-			if err != nil {
-				return err
-			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
-			return nil
-		},
+func (o *listOperation) Run(ctx cmd.OperationContext) error {
+	if err := o.list.Validate(); err != nil {
+		return err
 	}
 
-	cmd.Flags().StringVarP(&format, "format", "f", "pretty", "Output format (pretty, json)")
-	return cmd
+	// The endpoint is not paginated, so the whole listing arrives at once and
+	// is paged client-side.
+	volumes, err := ctx.Client.Volumes().List(ctx)
+	if err != nil {
+		return err
+	}
+
+	page := list.FromSlice(volumes, o.list.Page, o.list.Limit)
+
+	return list.Render(os.Stdout, page, o.list, toListedVolume, "No volumes found.")
 }

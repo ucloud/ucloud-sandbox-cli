@@ -1,91 +1,65 @@
 package snapshot
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/list"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 )
 
-// listedSnapshot is a display-friendly view of SnapshotInfo for table rendering.
-type listedSnapshot struct {
-	SnapshotID string `table_field:"Snapshot ID"`
-	Names      string `table_field:"Names"`
+type listOperation struct {
+	params api.SnapshotListParams
+
+	list list.Options
 }
 
-func toListedSnapshot(s sandbox.SnapshotInfo) listedSnapshot {
-	names := "-"
-	if len(s.Names) > 0 {
-		names = strings.Join(s.Names, ", ")
-	}
-	return listedSnapshot{
-		SnapshotID: s.SnapshotID,
-		Names:      names,
-	}
-}
-
-func newListCmd() *cobra.Command {
-	var sandboxID string
-	var format string
-
-	cmd := &cobra.Command{
+func (o *listOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List snapshots",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-
-			paginator := client.Sandboxes().ListSnapshots(ctx, sandbox.ListSnapshotsOptions{
-				SandboxID: sandboxID,
-			})
-			var snapshots []sandbox.SnapshotInfo
-			for paginator.HasNext() {
-				items, err := paginator.NextItems(ctx)
-				if err != nil {
-					return err
-				}
-				snapshots = append(snapshots, items...)
-			}
-
-			if format == "json" {
-				return json.NewEncoder(os.Stdout).Encode(snapshots)
-			}
-
-			if len(snapshots) == 0 {
-				fmt.Println("No snapshots found.")
-				return nil
-			}
-
-			rows := make([]listedSnapshot, len(snapshots))
-			for i, s := range snapshots {
-				rows[i] = toListedSnapshot(s)
-			}
-
-			out, err := table.Render(rows, 1, 0, int64(len(rows)))
-			if err != nil {
-				return err
-			}
-			fmt.Print(out)
-			return nil
-		},
+		Args:    cobra.NoArgs,
 	}
 
-	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Filter by sandbox ID")
-	cmd.Flags().StringVarP(&format, "format", "f", "pretty", "Output format (pretty, json)")
-	return cmd
+	flags.NullableStringVarP(c.Flags(), &o.params.SandboxID, "sandbox-id", "s",
+		"Keep only snapshots taken of this sandbox")
+	flags.NullableStringVarP(c.Flags(), &o.params.Name, "name", "n",
+		"Keep only snapshots matching this name or ID, optionally tag-qualified")
+
+	o.list.AddFlags(c)
+
+	return c
+}
+
+// listedSnapshot is a display-friendly view of api.SnapshotInfo for table
+// rendering.
+type listedSnapshot struct {
+	SnapshotID string `table_field:"Snapshot ID" json:"snapshot_id"`
+	Names      string `table_field:"Names" json:"names"`
+}
+
+func toListedSnapshot(s api.SnapshotInfo) listedSnapshot {
+	return listedSnapshot{
+		SnapshotID: s.SnapshotID,
+		Names:      strings.Join(s.Names, ", "),
+	}
+}
+
+func (o *listOperation) Run(ctx cmd.OperationContext) error {
+	if err := o.list.Validate(); err != nil {
+		return err
+	}
+
+	paginator := ctx.Client.Sandboxes().ListSnapshots(ctx, &o.params)
+
+	page, err := list.FromPaginator(ctx, paginator, o.list.Page, o.list.Limit)
+	if err != nil {
+		return err
+	}
+
+	return list.Render(os.Stdout, page, o.list, toListedSnapshot, "No snapshots found.")
 }

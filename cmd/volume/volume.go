@@ -1,16 +1,20 @@
 package volume
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+)
 
-// NewVolumeCmd returns the root volume command group.
-func NewVolumeCmd() *cobra.Command {
-	cmd := &cobra.Command{
+// Command returns the root volume command group.
+func Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "volume",
 		Aliases: []string{"vol"},
 		Short:   "Manage volumes",
 	}
-	cmd.AddCommand(newCreateCmd())
-	cmd.AddCommand(newDeleteCmd())
-	cmd.AddCommand(newListCmd())
-	return cmd
+	c.AddCommand(cmd.Build(&createOperation{}))
+	c.AddCommand(cmd.Build(&deleteOperation{}))
+	c.AddCommand(cmd.Build(&getOperation{}))
+	c.AddCommand(cmd.Build(&listOperation{}))
+	return c
 }

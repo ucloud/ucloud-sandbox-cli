@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
 )
@@ -22,22 +23,40 @@ const (
 	envDomain       = "UCLOUD_SANDBOX_DOMAIN"
 	envInsecureHTTP = "UCLOUD_SANDBOX_INSECURE_HTTP"
 
-	envRegistryUsername = "UCLOUD_SANDBOX_REGISTRY_USERNAME"
-	envRegistryPassword = "UCLOUD_SANDBOX_REGISTRY_PASSWORD"
+	envRegistries = "UCLOUD_SANDBOX_REGISTRIES"
 )
 
-// Config holds the CLI configuration.
-type Config struct {
-	APIKey           string `json:"api_key,omitempty"`
-	Region           string `json:"region,omitempty"`
-	Domain           string `json:"domain,omitempty"`
-	InsecureHTTP     bool   `json:"insecure_http,omitempty"`
-	RegistryUsername string `json:"registry_username,omitempty"`
-	RegistryPassword string `json:"registry_password,omitempty"`
+// RegistryAuth is the credentials for one container registry.
+type RegistryAuth struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-// configPath returns the path to the config file.
-func configPath() (string, error) {
+// Config holds the CLI configuration.
+//
+// No field is omitempty: the file is meant to be opened and edited by hand, so
+// it always lists every setting there is, and showing the configuration shows
+// what is unset as well as what is set.
+type Config struct {
+	APIKey       string `json:"api_key"`
+	Region       string `json:"region"`
+	Domain       string `json:"domain"`
+	InsecureHTTP bool   `json:"insecure_http"`
+
+	// Registries holds the credentials for pulling base images, keyed by
+	// registry domain ("docker.io", "uhub.service.ucloud.cn"). A template
+	// build looks up the registry of the image it starts from.
+	Registries map[string]RegistryAuth `json:"registries"`
+}
+
+// RegistryAuth returns the credentials configured for a registry domain.
+func (c *Config) RegistryAuth(domain string) (RegistryAuth, bool) {
+	auth, ok := c.Registries[strings.ToLower(domain)]
+	return auth, ok
+}
+
+// Path returns the path to the config file.
+func Path() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get home dir: %w", err)
@@ -45,9 +64,13 @@ func configPath() (string, error) {
 	return filepath.Join(home, configDir, configFile), nil
 }
 
-// Load reads the config file and overrides values with environment variables.
-func Load() (*Config, error) {
-	path, err := configPath()
+// LoadFile reads the config file on its own, without the environment overrides
+// Load applies. It is what a command that writes the file back reads first, so
+// a value that only came from the environment is not persisted into the file.
+//
+// A missing file is not an error: it reads as an empty config.
+func LoadFile() (*Config, error) {
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +84,16 @@ func Load() (*Config, error) {
 		if err := json.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("parse config: %w", err)
 		}
+	}
+
+	return cfg, nil
+}
+
+// Load reads the config file and overrides values with environment variables.
+func Load() (*Config, error) {
+	cfg, err := LoadFile()
+	if err != nil {
+		return nil, err
 	}
 
 	// Environment variables take precedence over the config file.
@@ -80,11 +113,12 @@ func Load() (*Config, error) {
 		}
 		cfg.InsecureHTTP = insecureHTTP
 	}
-	if v := os.Getenv(envRegistryUsername); v != "" {
-		cfg.RegistryUsername = v
-	}
-	if v := os.Getenv(envRegistryPassword); v != "" {
-		cfg.RegistryPassword = v
+	if v := os.Getenv(envRegistries); v != "" {
+		registries := map[string]RegistryAuth{}
+		if err := json.Unmarshal([]byte(v), &registries); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", envRegistries, err)
+		}
+		cfg.Registries = registries
 	}
 
 	return cfg, nil
@@ -92,7 +126,7 @@ func Load() (*Config, error) {
 
 // Save writes the config to ~/.ucloud-sandbox-cli/config.json.
 func Save(cfg *Config) error {
-	path, err := configPath()
+	path, err := Path()
 	if err != nil {
 		return err
 	}

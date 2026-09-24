@@ -66,6 +66,8 @@ ucloud-sandbox-cli update -y
 
 ## 身份认证与配置
 
+认证与配置相关的命令都在 `auth` 下面。
+
 ### 环境注入
 
 CLI 会优先读取环境变量中的 API Key、地域和其他配置。
@@ -89,10 +91,17 @@ export UCLOUD_SANDBOX_INSECURE_HTTP=true
 }
 ```
 
-查看当前生效的配置（API Key 会自动脱敏）：
+查看当前生效的配置（API Key 和镜像仓库密码会自动脱敏）：
 
 ```bash
-ucloud-sandbox-cli config
+ucloud-sandbox-cli auth config
+```
+
+直接用编辑器打开配置文件，编辑器取自 `$EDITOR`，未设置时用 `vim`，也可以在 `-e` 后面指定：
+
+```bash
+ucloud-sandbox-cli auth config -e
+ucloud-sandbox-cli auth config -e nano
 ```
 
 API key可以从星图平台的[密钥管理](https://astraflow.ucloud.cn/modelverse/api-keys)获取。
@@ -105,13 +114,13 @@ API key可以从星图平台的[密钥管理](https://astraflow.ucloud.cn/modelv
 
 ```bash
 # 这个命令会要求您输入API key并选择默认地域
-ucloud-sandbox-cli login
+ucloud-sandbox-cli auth login
 ```
 
 删除持久化认证：
 
 ```bash
-ucloud-sandbox-cli logout
+ucloud-sandbox-cli auth logout
 ```
 
 > 在持久化认证生效的情况下，仍然可以使用环境变量来替换API key和地域。
@@ -122,7 +131,38 @@ ucloud-sandbox-cli logout
 
 ```bash
 # 会列出当前可用的地域供您选择
-ucloud-sandbox-cli region
+ucloud-sandbox-cli auth region
+```
+
+### 镜像仓库凭据
+
+构建模板时如果 base image 来自私有仓库，需要先登录该仓库。凭据按仓库域名保存，可以同时配置多个仓库：
+
+```bash
+# 省略域名时使用 docker.io
+ucloud-sandbox-cli auth registry login
+ucloud-sandbox-cli auth registry login uhub.service.ucloud.cn
+```
+
+命令会提示输入用户名和密码（密码输入时不回显）。删除某个仓库的凭据：
+
+```bash
+ucloud-sandbox-cli auth registry logout uhub.service.ucloud.cn
+```
+
+`template build` 会解析 Dockerfile 里 `FROM` 的镜像，按其仓库域名自动选用对应凭据；没有匹配条目时不带鉴权，公共镜像无需配置。
+
+凭据在配置文件中的形状如下，也可以通过 `UCLOUD_SANDBOX_REGISTRIES` 环境变量以同样的 JSON 传入：
+
+```json
+{
+  "registries": {
+    "uhub.service.ucloud.cn": {
+      "username": "<username>",
+      "password": "<password>"
+    }
+  }
+}
 ```
 
 ## 沙箱运行管理
@@ -185,6 +225,46 @@ ucloud-sandbox-cli sandbox list
 # 简写：ucloud-sandbox-cli sandbox ls
 ```
 
+### 执行命令
+
+不进入交互终端，直接在沙箱里跑一条命令：
+
+```bash
+ucloud-sandbox-cli sandbox exec <sandbox-id> "python --version"
+
+# CLI 自己的参数要写在沙箱 ID 前面
+ucloud-sandbox-cli sandbox exec -u root <sandbox-id> "ls -la /root"
+```
+
+### 端口地址
+
+拿到沙箱内某个端口对外的访问地址：
+
+```bash
+ucloud-sandbox-cli sandbox host <sandbox-id> 3000
+
+# 输出完整 URL 而不是 host:port
+ucloud-sandbox-cli sandbox host <sandbox-id> 3000 --url
+```
+
+### 暂停与复制
+
+暂停沙箱并保留状态，下次连接时恢复：
+
+```bash
+ucloud-sandbox-cli sandbox pause <sandbox-id>
+
+# 只保留文件系统、不保留内存（恢复时冷启动）
+ucloud-sandbox-cli sandbox pause <sandbox-id> --memory=false
+```
+
+从一个运行中的沙箱复制出若干个副本，所有副本共用一次快照：
+
+```bash
+ucloud-sandbox-cli sandbox fork <sandbox-id>
+ucloud-sandbox-cli sandbox fork <sandbox-id> --count 3 --timeout 3600
+```
+
 ### 强制关停 (Kill)
 
 立即释放沙箱资源：
@@ -192,12 +272,15 @@ ucloud-sandbox-cli sandbox list
 ```bash
 # 关停特定 ID
 ucloud-sandbox-cli sandbox kill <sandbox-id>
- 
-# 关停所有活跃沙箱
+
+# 关停所有活跃沙箱，会先要求确认
 ucloud-sandbox-cli sandbox kill --all
+
+# 按状态过滤，并限制本次最多关停多少个
+ucloud-sandbox-cli sandbox kill --all --state running --limit 10 -y
 ```
 
-### 监控
+### 监控与日志
 
 实时洞察沙箱运行状态：
 
@@ -207,6 +290,102 @@ ucloud-sandbox-cli sandbox metrics <sandbox-id>
 
 # 持续查看指标
 ucloud-sandbox-cli sandbox metrics <sandbox-id> -w
+
+# 指定时间区间，参数是 Unix 时间戳（秒）
+ucloud-sandbox-cli sandbox metrics <sandbox-id> --start $(date -d '1 hour ago' +%s)
+```
+
+查看沙箱日志：
+
+```bash
+ucloud-sandbox-cli sandbox logs <sandbox-id>
+ucloud-sandbox-cli sandbox logs <sandbox-id> --level warn
+ucloud-sandbox-cli sandbox logs <sandbox-id> -f
+```
+
+## 文件管理
+
+文件相关命令在 `sandbox fs` 下面，每个命令都支持 `-u/--user` 指定以哪个用户执行：
+
+```bash
+# 浏览
+ucloud-sandbox-cli sandbox fs ls <sandbox-id> /home/user
+ucloud-sandbox-cli sandbox fs ls <sandbox-id> /home/user -d 2 -f json
+
+# 读取
+ucloud-sandbox-cli sandbox fs cat <sandbox-id> /home/user/app.py
+
+# 创建目录、移动、删除
+ucloud-sandbox-cli sandbox fs mkdir <sandbox-id> /home/user/app
+ucloud-sandbox-cli sandbox fs mv <sandbox-id> /home/user/old.txt /home/user/new.txt
+ucloud-sandbox-cli sandbox fs rm <sandbox-id> /home/user/obsolete.txt
+```
+
+上传和下载使用 `fs cp`，远端一侧写成 `<sandbox-id>:<path>`，源和目标里必须恰好有一个远端：
+
+```bash
+# 上传
+ucloud-sandbox-cli sandbox fs cp ./index.html <sandbox-id>:/home/user/app/index.html
+
+# 上传到目录并保留文件名（远端路径以 / 结尾）
+ucloud-sandbox-cli sandbox fs cp ./index.html <sandbox-id>:/home/user/app/
+
+# 下载
+ucloud-sandbox-cli sandbox fs cp <sandbox-id>:/home/user/app/out.txt ./out.txt
+```
+
+## Snapshot 管理
+
+把沙箱当前状态保存为快照：
+
+```bash
+ucloud-sandbox-cli snapshot create <sandbox-id>
+
+# 指定名称；名称已存在时会作为新的一次构建挂到该快照下
+ucloud-sandbox-cli snapshot create <sandbox-id> -n nightly
+```
+
+列出和删除快照：
+
+```bash
+ucloud-sandbox-cli snapshot list
+ucloud-sandbox-cli snapshot list -s <sandbox-id>
+ucloud-sandbox-cli snapshot delete <snapshot-id...>
+```
+
+快照 ID 可以直接当作模板传给 `sandbox create`，从快照启动新沙箱：
+
+```bash
+ucloud-sandbox-cli sandbox create <snapshot-id>
+```
+
+## Secret 管理
+
+Secret 的值是只写的，创建后不会再被返回：
+
+```bash
+# 不带 --value 时会提示输入，输入过程不回显
+ucloud-sandbox-cli secret create openai-key
+ucloud-sandbox-cli secret create openai-key --value "<value>"
+
+# 从标准输入读取，适合多行内容
+cat private.pem | ucloud-sandbox-cli secret create deploy-key --value-stdin
+```
+
+更新、查看和删除：
+
+```bash
+ucloud-sandbox-cli secret update openai-key
+ucloud-sandbox-cli secret get openai-key
+ucloud-sandbox-cli secret list
+ucloud-sandbox-cli secret delete openai-key
+```
+
+在创建沙箱时通过 `--network-rules` 引用 Secret，平台会在出站请求中替换为真实值：
+
+```bash
+ucloud-sandbox-cli sandbox create base \
+  --network-rules '{"api.example.com": {"X-API-KEY": "${openai-key}"}}'
 ```
 
 ## Volume 管理
@@ -224,6 +403,12 @@ ucloud-sandbox-cli vol list
 ucloud-sandbox-cli vol list --format json
 ```
 
+查看单个 Volume：
+
+```bash
+ucloud-sandbox-cli vol get <volume-id>
+```
+
 删除一个或多个 Volume：
 
 ```bash
@@ -237,9 +422,11 @@ ucloud-sandbox-cli vol delete <volume-id...>
 创建一个标准化的模板开发目录：
 
 ```bash
-ucloud-sandbox-cli tpl init my-custom-env --cpu <cpu> --memory <memory>
+ucloud-sandbox-cli tpl init my-custom-env --cpu-count <cpu> --memory-mb <memory>
 cd my-custom-env
 ```
+
+生成的 `ucloud-template.json` 记录模板名、CPU、内存和 Dockerfile 文件名，`template build` 在命令行没给对应参数时会从这里取值。
 
 ### 构建模板
 
@@ -251,10 +438,38 @@ cd my-custom-env
 ucloud-sandbox-cli tpl build my-custom-env
 ```
 
+常用构建参数：
+
+```bash
+# 指定资源；内存必须是偶数 MB
+ucloud-sandbox-cli tpl build my-custom-env --cpu-count 2 --memory-mb 2048
+
+# 跳过缓存，强制重跑每一步
+ucloud-sandbox-cli tpl build my-custom-env --no-cache
+
+# 打标签，并在构建完成后直接公开
+ucloud-sandbox-cli tpl build my-custom-env -t v1 -t latest --publish
+
+# 指定启动命令和就绪探针，两者必须一起给
+ucloud-sandbox-cli tpl build my-custom-env \
+  --cmd "python app.py" \
+  --ready-cmd "curl -f http://localhost:8000/health"
+```
+
 可使用 `--level` 控制构建日志的最低等级（`debug`、`info`、`warn` 或 `error`），默认为 `info`：
 
 ```bash
 ucloud-sandbox-cli tpl build my-custom-env --level debug
+```
+
+> 构建上下文就是 Dockerfile 所在的目录，`COPY` 的源路径相对于该目录解析。`--dockerfile` 指向该目录之外时命令会直接报错，而不是用错误的文件构建。
+
+### 查看模板与构建日志
+
+```bash
+ucloud-sandbox-cli tpl list
+ucloud-sandbox-cli tpl get <template-id>
+ucloud-sandbox-cli tpl logs <template-id> <build-id>
 ```
 
 ### 发布模板
@@ -271,9 +486,40 @@ ucloud-sandbox-cli tpl publish <template-id>
 ucloud-sandbox-cli tpl publish --unpublish <template-id>
 ```
 
+### 模板标签
+
+标签指向模板的某一次构建，可以用来固定版本：
+
+```bash
+ucloud-sandbox-cli tpl tag list my-custom-env
+ucloud-sandbox-cli tpl tag assign my-custom-env:latest v1
+ucloud-sandbox-cli tpl tag remove my-custom-env v1
+```
+
+### 删除模板
+
+```bash
+ucloud-sandbox-cli tpl delete <template-id>
+
+# 从列表中交互选择
+ucloud-sandbox-cli tpl delete --select
+```
+
+## 输出格式与分页
+
+所有列表类命令（`sandbox list`、`volume list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`）都支持同一组参数：
+
+```bash
+-f, --format string   输出格式，pretty 或 json（默认 pretty）
+-p, --page int        页码（默认 1）
+-l, --limit int       每页条数，0 表示全部
+```
+
+需要在脚本里解析结果时用 `-f json`。
+
 ## 典型工作流示例
 
-1. 准备环境：`ucloud-sandbox-cli login`
-2. 创建模板：`ucloud-sandbox-cli template init` -> 编写 `Dockerfile`
+1. 准备环境：`ucloud-sandbox-cli auth login`
+2. 创建模板：`ucloud-sandbox-cli template init` -> 编写 `template.dockerfile` -> `ucloud-sandbox-cli template build`
 3. 业务接入：在 SDK 中使用 `Sandbox.create(template='my-agent-env')`
 4. 资源回收：`ucloud-sandbox-cli sandbox kill --all`

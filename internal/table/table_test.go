@@ -103,6 +103,13 @@ func TestRender_TotalPages(t *testing.T) {
 	assert.True(t, strings.HasPrefix(out, "Page: 1/1, Total: 5\n"))
 }
 
+func TestRender_UnknownTotal(t *testing.T) {
+	// A negative total marks a listing whose size the endpoint never reported.
+	out, err := Render([]sample{{Title: "x"}}, 2, 10, -1)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(out, "Page: 2/?, Total: ?\n"), "header line, got: %q", strings.SplitN(out, "\n", 2)[0])
+}
+
 func TestFitToWidth_NoTruncation(t *testing.T) {
 	widths := []int{6, 13, 5}
 	hdrs := []string{"Remote", "Owner", "Name"}

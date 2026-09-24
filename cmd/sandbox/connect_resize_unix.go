@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox/pty"
 	"golang.org/x/term"
 )
 
-func watchTerminalResize(ctx context.Context, fd int, handle *sandbox.PtyHandle, _, _ int) func() {
+func watchTerminalResize(ctx context.Context, fd int, handle *pty.Handle, _, _ int) func() {
 	sigCh := make(chan os.Signal, 1)
 	done := make(chan struct{})
 	signal.Notify(sigCh, syscall.SIGWINCH)
@@ -26,7 +26,7 @@ func watchTerminalResize(ctx context.Context, fd int, handle *sandbox.PtyHandle,
 				return
 			case <-sigCh:
 				if cols, rows, err := term.GetSize(fd); err == nil {
-					_ = handle.Resize(ctx, sandbox.PtySize{Cols: cols, Rows: rows})
+					_ = handle.Resize(ctx, pty.Size{Cols: cols, Rows: rows})
 				}
 			}
 		}

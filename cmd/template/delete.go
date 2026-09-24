@@ -1,88 +1,76 @@
 package template
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/prompt"
 )
 
-func newDeleteCmd() *cobra.Command {
-	var path string
-	var yes bool
-	var selectMode bool
+type deleteOperation struct {
+	targets
+}
 
-	cmd := &cobra.Command{
+func (o *deleteOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "delete [template...]",
-		Aliases: []string{"dl"},
-		Short:   "Delete sandbox templates",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-
-			// Resolve target templates
-			targets, localCfg, err := resolveTargets(ctx, client, args, path, selectMode)
-			if err != nil {
-				return err
-			}
-
-			if len(targets) == 0 {
-				fmt.Println("No templates selected.")
-				return nil
-			}
-
-			// Print targets
-			fmt.Println("\nTemplates to delete:")
-			for _, id := range targets {
-				fmt.Printf("  - %s\n", id)
-			}
-			fmt.Println()
-
-			// Confirm
-			if !yes {
-				confirmed, err := prompt.Confirm("Do you really want to delete these templates?")
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					fmt.Println("Canceled.")
-					return nil
-				}
-			}
-
-			// Delete each
-			for _, id := range targets {
-				fmt.Printf("Deleting template %s...", id)
-				if _, err := client.Templates().Delete(ctx, id); err != nil {
-					fmt.Printf(" failed: %v\n", err)
-					continue
-				}
-				fmt.Println(" done")
-			}
-
-			// Delete local config if applicable
-			if localCfg != nil {
-				if err := deleteConfig(path); err != nil {
-					fmt.Printf("Warning: failed to delete config: %v\n", err)
-				}
-			}
-
-			return nil
-		},
+		Aliases: []string{"dl", "rm"},
+		Short:   "Delete one or more templates",
+		Args:    cobra.ArbitraryArgs,
 	}
 
-	cmd.Flags().StringVarP(&path, "path", "p", ".", "Project root path")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation")
-	cmd.Flags().BoolVarP(&selectMode, "select", "s", false, "Interactive selection")
-	return cmd
+	o.AddFlags(c.Flags())
+
+	return c
+}
+
+func (o *deleteOperation) Run(ctx cmd.OperationContext) error {
+	ids, local, err := o.resolve(ctx)
+	if err != nil {
+		return err
+	}
+
+	report("delete", ids)
+
+	if !o.yes {
+		confirmed, err := prompt.Confirm("Do you really want to delete these templates?")
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	}
+
+	// Deleting stops at the first failure, so a broken run does not keep
+	// destroying templates.
+	total := 0
+	for _, id := range ids {
+		deleted, err := ctx.Client.Templates().Delete(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete template %s: %w", id, err)
+		}
+
+		// A template that is already gone satisfies the intent.
+		if !deleted {
+			fmt.Printf("Template %s not found.\n", id)
+			continue
+		}
+
+		total++
+		fmt.Printf("Template %s deleted.\n", id)
+	}
+
+	// The local config points at a template that no longer exists, so it goes
+	// with it -- but only when it is what named the template.
+	if local != nil {
+		if err := deleteConfig(o.path); err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
+	}
+
+	fmt.Printf("Deleted %d template(s).\n", total)
+
+	return nil
 }

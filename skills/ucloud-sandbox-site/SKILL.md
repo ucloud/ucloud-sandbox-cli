@@ -32,9 +32,9 @@ description: 当用户提供以 `site_` 开头的 UCloud 站点空间连接 Key�
 
 - `sandbox exec`：执行命令、检查环境、构建项目和管理服务。
 - `sandbox host`：获取 80 端口的站点访问地址。
-- `fs ls`、`fs cat`、`fs mkdir`、`fs cp`、`fs mv`、`fs rm`：管理该站点沙箱内的文件和目录。
+- `sandbox fs ls`、`sandbox fs cat`、`sandbox fs mkdir`、`sandbox fs cp`、`sandbox fs mv`、`sandbox fs rm`：管理该站点沙箱内的文件和目录。本节以下把这一组简称为 `fs ...`。
 
-不要尝试 `sandbox list`、`create`、`clone`、`kill`、`pause`，也不要执行快照、模板或其他管理命令。站点凭证返回无权限并不表示站点连接失败。
+不要尝试 `sandbox list`、`create`、`fork`、`kill`、`pause`，也不要执行快照、Secret、Volume、模板或其他管理命令。站点凭证返回无权限并不表示站点连接失败。
 
 执行文件删除、覆盖或大范围移动前，先确认路径属于当前网站且操作符合用户意图。不要为了“清理部署目录”删除 `/home/user`、`/home/user/.site.env` 或来源不明的已有文件。
 
@@ -188,7 +188,7 @@ IP 名单和自定义域名都属于站点侧配置，AI 无法通过 CLI 查询
 各字段来源：
 
 - 沙箱 ID：从连接 Key 派生的沙箱 ID，不含连接码。
-- 地域：当前 CLI 配置或 `UCLOUD_SANDBOX_REGION` 中的地域，可通过 `ucloud-sandbox-cli config` 确认。
+- 地域：当前 CLI 配置或 `UCLOUD_SANDBOX_REGION` 中的地域，可通过 `ucloud-sandbox-cli auth config` 确认。
 - 工作目录：第 2 步验证命令中 `pwd` 的输出，正常为 `/home/user`。
 - 失败原因：摘自 CLI 的实际错误输出，可以概括但不得虚构，也不要包含完整连接 Key 或连接码。
 - 连接技能状态三选一：会话或平台已确认技能为最新版时用“已是最新”；已确认技能不是最新时用“请重新安装最新版，否则可能影响新功能使用”（成功模板）或“请重新安装最新版，否则可能影响连接及新功能使用”（失败模板）；无法完成检查时用“未能检查更新，请确认是否为最新版”。不要编造检查结果。
@@ -300,9 +300,9 @@ ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" "stop-postgres"
 ### 浏览和读取文件
 
 ```bash
-ucloud-sandbox-cli fs ls "$SANDBOX_ID" /home/user
-ucloud-sandbox-cli fs ls "$SANDBOX_ID" /home/user --format json
-ucloud-sandbox-cli fs cat "$SANDBOX_ID" /home/user/site/index.html
+ucloud-sandbox-cli sandbox fs ls "$SANDBOX_ID" /home/user
+ucloud-sandbox-cli sandbox fs ls "$SANDBOX_ID" /home/user --format json
+ucloud-sandbox-cli sandbox fs cat "$SANDBOX_ID" /home/user/site/index.html
 ```
 
 只对确认不含敏感信息的普通文件使用 `fs cat`。不要对 `/home/user/.site.env` 使用 `fs cat`。
@@ -310,7 +310,7 @@ ucloud-sandbox-cli fs cat "$SANDBOX_ID" /home/user/site/index.html
 ### 创建目录
 
 ```bash
-ucloud-sandbox-cli fs mkdir "$SANDBOX_ID" /home/user/site
+ucloud-sandbox-cli sandbox fs mkdir "$SANDBOX_ID" /home/user/site
 ```
 
 目录已存在时命令仍然成功，并提示 `Directory already exists`。创建多层目录时，从已有的父目录开始逐层调用 `fs mkdir`；如果需要一次创建完整目录树，可以通过 `sandbox exec` 执行经过校验的 `mkdir -p`。
@@ -321,10 +321,10 @@ ucloud-sandbox-cli fs mkdir "$SANDBOX_ID" /home/user/site
 
 ```bash
 # 上传
-ucloud-sandbox-cli fs cp ./index.html "$SANDBOX_ID:/home/user/site/index.html"
+ucloud-sandbox-cli sandbox fs cp ./index.html "$SANDBOX_ID:/home/user/site/index.html"
 
 # 下载
-ucloud-sandbox-cli fs cp "$SANDBOX_ID:/home/user/site/service.log" ./service.log
+ucloud-sandbox-cli sandbox fs cp "$SANDBOX_ID:/home/user/site/service.log" ./service.log
 ```
 
 上传目录时，先在本地打包，再上传并在站点中解压。排除 `.env`、凭证、依赖目录和其他不应部署的本地文件：
@@ -338,7 +338,7 @@ tar \
   --exclude='node_modules' \
   -czf /tmp/site-release.tgz -C "$LOCAL_PROJECT_DIR" .
 
-ucloud-sandbox-cli fs cp /tmp/site-release.tgz "$SANDBOX_ID:/tmp/site-release.tgz"
+ucloud-sandbox-cli sandbox fs cp /tmp/site-release.tgz "$SANDBOX_ID:/tmp/site-release.tgz"
 ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" \
   "mkdir -p /home/user/site && tar -xzf /tmp/site-release.tgz -C /home/user/site && rm -f /tmp/site-release.tgz"
 ```
@@ -348,8 +348,8 @@ ucloud-sandbox-cli sandbox exec "$SANDBOX_ID" \
 ### 移动和删除文件
 
 ```bash
-ucloud-sandbox-cli fs mv "$SANDBOX_ID" /home/user/site/old.html /home/user/site/index.html
-ucloud-sandbox-cli fs rm "$SANDBOX_ID" /home/user/site/obsolete.html
+ucloud-sandbox-cli sandbox fs mv "$SANDBOX_ID" /home/user/site/old.html /home/user/site/index.html
+ucloud-sandbox-cli sandbox fs rm "$SANDBOX_ID" /home/user/site/obsolete.html
 ```
 
 `fs rm` 是破坏性操作。执行前确认准确路径；需要删除目录或批量文件时，不要把未校验的用户输入拼入 `rm -rf`。

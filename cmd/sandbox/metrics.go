@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,9 +12,9 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/guptarohit/asciigraph"
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/datetime"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 	"golang.org/x/term"
 )
 
@@ -30,85 +29,107 @@ const (
 	xAxisDateYear       = "2006-01-02"
 )
 
-func newMetricsCmd() *cobra.Command {
-	var startStr, sinceStr, endStr string
-	var watch bool
-	var interval int
-	var raw bool
+type metricsOperation struct {
+	params api.SandboxMetricsParams
 
-	cmd := &cobra.Command{
+	watch    bool
+	interval int
+	raw      bool
+}
+
+func (o *metricsOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:   "metrics <sandbox-id>",
 		Short: "Show sandbox resource metrics",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if startStr != "" && sinceStr != "" {
-				return fmt.Errorf("--start and --since are mutually exclusive")
-			}
-
-			var start, end time.Time
-			var err error
-			if startStr != "" {
-				if start, err = datetime.Parse(startStr); err != nil {
-					return err
-				}
-			} else if sinceStr != "" {
-				if start, err = datetime.ParseSince(sinceStr); err != nil {
-					return err
-				}
-			}
-			if endStr != "" {
-				if end, err = datetime.Parse(endStr); err != nil {
-					return err
-				}
-			}
-
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
-			if err != nil {
-				return err
-			}
-
-			if watch {
-				return watchMetrics(ctx, sbx, start, end, time.Duration(interval)*time.Second, raw)
-			}
-			return showMetrics(ctx, sbx, start, end, raw)
-		},
 	}
 
-	cmd.Flags().StringVar(&startStr, "start", "", "Start time (e.g. '12:00', '06-23 12:00', '2025-07-23 12:00')")
-	cmd.Flags().StringVar(&sinceStr, "since", "", "Start time relative to now (e.g. '1h', '30m')")
-	cmd.Flags().StringVar(&endStr, "end", "", "End time (same format as --start)")
-	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Refresh periodically")
-	cmd.Flags().IntVar(&interval, "interval", 2, "Refresh interval in seconds (requires --watch)")
-	cmd.Flags().BoolVar(&raw, "raw", false, "Print raw JSON instead of charts")
-	return cmd
+	flags.NullableInt64VarP(c.Flags(), &o.params.Start, "start", "", "Start of the interval, as a Unix timestamp in seconds")
+	flags.NullableInt64VarP(c.Flags(), &o.params.End, "end", "", "End of the interval, as a Unix timestamp in seconds")
+
+	c.Flags().BoolVarP(&o.watch, "watch", "w", false, "Refresh periodically")
+	c.Flags().IntVarP(&o.interval, "interval", "", 2, "Refresh interval in seconds (requires --watch)")
+	c.Flags().BoolVarP(&o.raw, "raw", "", false, "Print raw JSON instead of charts")
+
+	return c
 }
 
-func fetchMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time) ([]sandbox.Metrics, error) {
-	var opts sandbox.MetricsOptions
-	if !start.IsZero() {
-		opts.StartUnix = start.Unix()
+func (o *metricsOperation) Run(ctx cmd.OperationContext) error {
+	if o.watch && o.interval <= 0 {
+		return fmt.Errorf("invalid --interval %d: must be 1 or greater", o.interval)
 	}
-	if !end.IsZero() {
-		opts.EndUnix = end.Unix()
+
+	sandboxID := ctx.Args[0]
+
+	render := func() error {
+		metrics, err := ctx.Client.Sandboxes().Metrics(ctx, sandboxID, &o.params)
+		if err != nil {
+			return err
+		}
+
+		if o.raw {
+			return json.NewEncoder(os.Stdout).Encode(metrics)
+		}
+
+		renderMetrics(metrics, sandboxID)
+
+		return nil
 	}
-	return sbx.Metrics(ctx, opts)
+
+	if !o.watch {
+		return render()
+	}
+
+	// Ctrl+C ends the watch without failing the command.
+	watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	interval := time.Duration(o.interval) * time.Second
+
+	watched := func() error {
+		if !o.raw {
+			fmt.Print("\033[H\033[2J") // clear screen
+			fmt.Printf("Refreshing every %v  (Ctrl+C to stop)\n\n", interval)
+		}
+
+		return render()
+	}
+
+	if err := watched(); err != nil {
+		return err
+	}
+
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-tick.C:
+			if err := watched(); err != nil {
+				return err
+			}
+		case <-watchCtx.Done():
+			return nil
+		}
+	}
 }
 
-func renderMetrics(metrics []sandbox.Metrics, sandboxID string) {
+// metricTime is when a sample was taken. TimestampUnix is the current field;
+// the deprecated Timestamp is the fallback for a backend that only sends it.
+func metricTime(m api.SandboxMetric) time.Time {
+	if m.TimestampUnix != 0 {
+		return time.Unix(m.TimestampUnix, 0)
+	}
+
+	return m.Timestamp
+}
+
+func renderMetrics(metrics []api.SandboxMetric, sandboxID string) {
 	width := terminalWidth()
 	if width == 0 {
 		width = defaultMetricsWidth
 	}
+
 	fmt.Print(formatMetrics(metrics, sandboxID, width))
 }
 
@@ -119,23 +140,22 @@ func terminalWidth() int {
 	if err != nil || w <= 0 {
 		return 0
 	}
+
 	return w
 }
 
 // formatMetrics renders a width-constrained metrics dashboard. Keeping this
 // separate from renderMetrics makes the layout deterministic for tests and
 // prevents chart libraries from expanding to the number of samples.
-func formatMetrics(metrics []sandbox.Metrics, sandboxID string, width int) string {
+func formatMetrics(metrics []api.SandboxMetric, sandboxID string, width int) string {
 	if width <= 0 {
 		width = defaultMetricsWidth
 	}
 
 	var b strings.Builder
 	writeMetricLine(&b, "Sandbox metrics", width)
-	idWidth := width - len("ID      ") - 2
-	if idWidth < 1 {
-		idWidth = 1
-	}
+
+	idWidth := max(width-len("ID      ")-2, 1)
 	writeMetricLine(&b, "ID      "+truncateMetricText(sandboxID, idWidth), width)
 
 	sampleWord := "samples"
@@ -176,18 +196,21 @@ func formatMetrics(metrics []sandbox.Metrics, sandboxID string, width int) strin
 		}
 		b.WriteByte('\n')
 	}
+
 	return b.String()
 }
 
-func metricDisplayRange(metrics []sandbox.Metrics) (time.Time, time.Time) {
-	first := metrics[0].Timestamp
-	last := metrics[len(metrics)-1].Timestamp
+func metricDisplayRange(metrics []api.SandboxMetric) (time.Time, time.Time) {
+	first := metricTime(metrics[0])
+	last := metricTime(metrics[len(metrics)-1])
+
 	if !first.IsZero() {
 		first = first.In(time.Local)
 	}
 	if !last.IsZero() {
 		last = last.In(time.Local)
 	}
+
 	return first, last
 }
 
@@ -200,6 +223,7 @@ func truncateMetricText(value string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+
 	runes := []rune(value)
 	if len(runes) <= width {
 		return value
@@ -207,6 +231,7 @@ func truncateMetricText(value string, width int) string {
 	if width <= 3 {
 		return string(runes[:width])
 	}
+
 	return string(runes[:width-3]) + "..."
 }
 
@@ -226,6 +251,7 @@ func (m metricSeries) usageLine(width int) string {
 	if width >= 60 {
 		return fmt.Sprintf("%-12s%6.1f%%  peak %6.1f%%  %s", m.name, m.current, m.peak, m.detail)
 	}
+
 	line := fmt.Sprintf("%-12s%.1f%%", m.name, m.current)
 	if m.peak != m.current {
 		line += fmt.Sprintf(" peak %.1f%%", m.peak)
@@ -233,27 +259,30 @@ func (m metricSeries) usageLine(width int) string {
 	if m.detail != "" {
 		line += " " + m.detail
 	}
+
 	return line
 }
 
-func buildMetricSeries(metrics []sandbox.Metrics) []metricSeries {
+func buildMetricSeries(metrics []api.SandboxMetric) []metricSeries {
 	latest := metrics[len(metrics)-1]
+
 	cpu := make([]float64, len(metrics))
 	memory := make([]float64, len(metrics))
 	disk := make([]float64, len(metrics))
 	for i, item := range metrics {
-		cpu[i] = item.CPUUsedPct
+		cpu[i] = float64(item.CpuUsedPct)
 		memory[i] = percent(item.MemUsed, item.MemTotal)
 		disk[i] = percent(item.DiskUsed, item.DiskTotal)
 	}
+
 	return []metricSeries{
 		{
 			name:      "CPU",
 			values:    cpu,
-			current:   latest.CPUUsedPct,
+			current:   float64(latest.CpuUsedPct),
 			peak:      maxValue(cpu),
 			available: true,
-			detail:    fmt.Sprintf("%d vCPU", latest.CPUCount),
+			detail:    fmt.Sprintf("%d vCPU", latest.CpuCount),
 		},
 		{
 			name:      "Memory",
@@ -275,19 +304,21 @@ func buildMetricSeries(metrics []sandbox.Metrics) []metricSeries {
 }
 
 func maxValue(values []float64) float64 {
-	var max float64
+	var highest float64
 	for _, value := range values {
-		if value > max {
-			max = value
+		if value > highest {
+			highest = value
 		}
 	}
-	return max
+
+	return highest
 }
 
 func storageDetail(used, total int64) string {
 	if total <= 0 {
 		return ""
 	}
+
 	return fmt.Sprintf("%s / %s", humanize.IBytes(uint64(max(used, 0))), humanize.IBytes(uint64(total)))
 }
 
@@ -295,6 +326,7 @@ func percent(used, total int64) float64 {
 	if total <= 0 {
 		return 0
 	}
+
 	return float64(used) / float64(total) * 100
 }
 
@@ -319,6 +351,7 @@ func formatMetricsTrendChart(values []float64, first, last time.Time, width int)
 	if first.IsZero() || last.IsZero() {
 		return chart
 	}
+
 	return chart + "\n" + formatMetricsXAxis(chart, plotWidth, first, last)
 }
 
@@ -380,54 +413,6 @@ func metricsXAxisLayout(plotWidth int, first, last time.Time) (string, int) {
 			return format, 2
 		}
 	}
+
 	return formats[len(formats)-1], 2
-}
-
-func showMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time, raw bool) error {
-	metrics, err := fetchMetrics(ctx, sbx, start, end)
-	if err != nil {
-		return err
-	}
-	if raw {
-		return json.NewEncoder(os.Stdout).Encode(metrics)
-	}
-	renderMetrics(metrics, sbx.ID)
-	return nil
-}
-
-func watchMetrics(ctx context.Context, sbx *sandbox.Sandbox, start, end time.Time, interval time.Duration, raw bool) error {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	tick := time.NewTicker(interval)
-	defer tick.Stop()
-
-	render := func() error {
-		metrics, err := fetchMetrics(ctx, sbx, start, end)
-		if err != nil {
-			return err
-		}
-		if raw {
-			return json.NewEncoder(os.Stdout).Encode(metrics)
-		}
-		fmt.Print("\033[H\033[2J") // clear screen
-		fmt.Printf("Refreshing every %v  (Ctrl+C to stop)\n\n", interval)
-		renderMetrics(metrics, sbx.ID)
-		return nil
-	}
-
-	if err := render(); err != nil {
-		return err
-	}
-	for {
-		select {
-		case <-tick.C:
-			if err := render(); err != nil {
-				return err
-			}
-		case <-sigCh:
-			return nil
-		}
-	}
 }

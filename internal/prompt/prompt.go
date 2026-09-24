@@ -26,6 +26,36 @@ func AskAPIKey() (string, error) {
 	return p.Run()
 }
 
+// AskUsername prompts for a registry username.
+func AskUsername() (string, error) {
+	p := promptui.Prompt{
+		Label: "Username",
+		Validate: func(s string) error {
+			if s == "" {
+				return errors.New("username cannot be empty")
+			}
+			return nil
+		},
+	}
+	return p.Run()
+}
+
+// AskSecret prompts for a secret value with masked input, so it is neither
+// echoed nor left behind in the shell's history.
+func AskSecret(label string) (string, error) {
+	p := promptui.Prompt{
+		Label: label,
+		Mask:  '*',
+		Validate: func(s string) error {
+			if s == "" {
+				return errors.New("value cannot be empty")
+			}
+			return nil
+		},
+	}
+	return p.Run()
+}
+
 // AskRegion prompts the user to select or enter a region.
 // If allowSkip is true, an additional "Skip" option is shown.
 func AskRegion(allowSkip bool) (string, error) {

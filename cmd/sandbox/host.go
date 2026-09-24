@@ -1,43 +1,60 @@
 package sandbox
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 )
 
-func newHostCmd() *cobra.Command {
-	return &cobra.Command{
+type hostOperation struct {
+	url bool
+}
+
+func (o *hostOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:   "host <sandbox-id> <port>",
-		Short: "Print the host URL for a sandbox port",
+		Short: "Print the address reaching a port inside a sandbox",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			port, err := strconv.Atoi(args[1])
-			if err != nil {
-				return fmt.Errorf("invalid port %q: %w", args[1], err)
-			}
-
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-			sbx, err := client.Sandboxes().Connect(ctx, args[0], sandbox.ConnectOptions{})
-			if err != nil {
-				return err
-			}
-
-			fmt.Println(sbx.Host(port))
-			return nil
-		},
 	}
+
+	c.Flags().BoolVarP(&o.url, "url", "", false, "Print a full URL rather than host:port")
+
+	return c
+}
+
+func (o *hostOperation) Run(ctx cmd.OperationContext) error {
+	port, err := strconv.Atoi(ctx.Args[1])
+	if err != nil {
+		return fmt.Errorf("invalid port %q: %w", ctx.Args[1], err)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port %d: must be between 1 and 65535", port)
+	}
+
+	// Read rather than connect: the address is derived from the sandbox's ID
+	// and domain, so printing it has no reason to resume a paused sandbox.
+	// The address of a paused one is still its address; it answers once the
+	// sandbox is running again.
+	detail, err := ctx.Client.Sandboxes().Get(ctx, ctx.Args[0])
+	if err != nil {
+		return err
+	}
+
+	domain := ""
+	if detail.Domain != nil {
+		domain = *detail.Domain
+	}
+
+	transport := ctx.Client.Transport()
+	host := transport.SandboxHost(detail.SandboxID, domain, port)
+
+	if o.url {
+		host = transport.SandboxScheme() + "://" + host
+	}
+
+	fmt.Println(host)
+
+	return nil
 }

@@ -1,22 +1,29 @@
 package sandbox
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/sandbox/fs"
+)
 
 // NewSandboxCmd returns the root sandbox command group.
-func NewSandboxCmd() *cobra.Command {
-	cmd := &cobra.Command{
+func Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "sandbox",
 		Aliases: []string{"sbx"},
 		Short:   "Manage sandboxes",
 	}
-	cmd.AddCommand(newCreateCmd())
-	cmd.AddCommand(newConnectCmd())
-	cmd.AddCommand(newKillCmd())
-	cmd.AddCommand(newPauseCmd())
-	cmd.AddCommand(newListCmd())
-	cmd.AddCommand(newExecCmd())
-	cmd.AddCommand(newHostCmd())
-	cmd.AddCommand(newMetricsCmd())
-	cmd.AddCommand(newLogsCmd())
-	return cmd
+	c.AddCommand(cmd.Build(&connectOperation{}))
+	c.AddCommand(cmd.Build(&createOperation{}))
+	c.AddCommand(cmd.Build(&execOperation{}))
+	c.AddCommand(cmd.Build(&forkOperation{}))
+	c.AddCommand(fs.Command())
+	c.AddCommand(cmd.Build(&getOperation{}))
+	c.AddCommand(cmd.Build(&hostOperation{}))
+	c.AddCommand(cmd.Build(&killOperation{}))
+	c.AddCommand(cmd.Build(&listOperation{}))
+	c.AddCommand(cmd.Build(&logsOperation{}))
+	c.AddCommand(cmd.Build(&metricsOperation{}))
+	c.AddCommand(cmd.Build(&pauseOperation{}))
+	return c
 }

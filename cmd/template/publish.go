@@ -1,104 +1,77 @@
 package template
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/prompt"
 )
 
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
+type publishOperation struct {
+	targets
+
+	unpublish bool
 }
 
-func newPublishCmd() *cobra.Command {
-	var path string
-	var yes bool
-	var selectMode bool
-	var unpublish bool
-
-	cmd := &cobra.Command{
+func (o *publishOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "publish [template...]",
 		Aliases: []string{"pb"},
-		Short:   "Publish or unpublish sandbox templates",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-
-			// Resolve targets
-			targets, _, err := resolveTargets(ctx, client, args, path, selectMode)
-			if err != nil {
-				return err
-			}
-
-			if len(targets) == 0 {
-				fmt.Println("No templates selected.")
-				return nil
-			}
-
-			action := "publish"
-			if unpublish {
-				action = "unpublish"
-			}
-
-			// Print targets
-			fmt.Printf("\nTemplates to %s:\n", action)
-			for _, id := range targets {
-				fmt.Printf("  - %s\n", id)
-			}
-			fmt.Println()
-
-			// Confirm
-			if !yes {
-				if !unpublish {
-					fmt.Println("⚠️  This will make the templates public to everyone outside your team")
-				}
-				confirmed, err := prompt.Confirm(fmt.Sprintf("Do you really want to %s these templates?", action))
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					fmt.Println("Canceled.")
-					return nil
-				}
-			}
-
-			// Publish/unpublish each
-			for _, id := range targets {
-				fmt.Printf("%s template %s...", capitalize(action), id)
-				names, err := client.Templates().UpdateV2(ctx, id, !unpublish)
-				if err != nil {
-					fmt.Printf(" failed: %v\n", err)
-					continue
-				}
-				if !unpublish && len(names) > 0 {
-					fmt.Printf(" done (published as: %s)\n", strings.Join(names, ", "))
-				} else {
-					fmt.Println(" done")
-				}
-			}
-
-			return nil
-		},
+		Short:   "Publish or unpublish templates",
+		Args:    cobra.ArbitraryArgs,
 	}
 
-	cmd.Flags().StringVarP(&path, "path", "p", ".", "Project root path")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation")
-	cmd.Flags().BoolVarP(&selectMode, "select", "s", false, "Interactive selection")
-	cmd.Flags().BoolVar(&unpublish, "unpublish", false, "Unpublish instead of publish")
-	return cmd
+	o.AddFlags(c.Flags())
+
+	c.Flags().BoolVarP(&o.unpublish, "unpublish", "", false, "Make the templates private to the team again")
+
+	return c
+}
+
+func (o *publishOperation) Run(ctx cmd.OperationContext) error {
+	ids, _, err := o.resolve(ctx)
+	if err != nil {
+		return err
+	}
+
+	action := "publish"
+	if o.unpublish {
+		action = "unpublish"
+	}
+
+	report(action, ids)
+
+	if !o.yes {
+		// Going public is the one direction that cannot be taken back from
+		// whoever already copied the template.
+		if !o.unpublish {
+			fmt.Println("This will make the templates visible to everyone outside your team.")
+		}
+
+		confirmed, err := prompt.Confirm(fmt.Sprintf("Do you really want to %s these templates?", action))
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	}
+
+	for _, id := range ids {
+		names, err := ctx.Client.Templates().UpdateV2(ctx, id, !o.unpublish)
+		if err != nil {
+			return fmt.Errorf("failed to %s template %s: %w", action, id, err)
+		}
+
+		if !o.unpublish && len(names) > 0 {
+			fmt.Printf("Template %s published as %s.\n", id, strings.Join(names, ", "))
+			continue
+		}
+
+		fmt.Printf("Template %s unpublished.\n", id)
+	}
+
+	return nil
 }

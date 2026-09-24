@@ -5,12 +5,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/cmd"
-	fscmd "github.com/ucloud/ucloud-sandbox-cli/cmd/fs"
-	sandboxcmd "github.com/ucloud/ucloud-sandbox-cli/cmd/sandbox"
-	snapshotcmd "github.com/ucloud/ucloud-sandbox-cli/cmd/snapshot"
-	templatecmd "github.com/ucloud/ucloud-sandbox-cli/cmd/template"
-	volumecmd "github.com/ucloud/ucloud-sandbox-cli/cmd/volume"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/auth"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/sandbox"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/secret"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/snapshot"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/template"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/update"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/volume"
 )
 
 var (
@@ -29,16 +30,13 @@ func newCommand() *cobra.Command {
 		Version: Version,
 	}
 
-	c.AddCommand(cmd.NewLoginCmd())
-	c.AddCommand(cmd.NewLogoutCmd())
-	c.AddCommand(cmd.NewRegionCmd())
-	c.AddCommand(cmd.NewConfigCmd())
-	c.AddCommand(sandboxcmd.NewSandboxCmd())
-	c.AddCommand(fscmd.NewFsCmd())
-	c.AddCommand(snapshotcmd.NewSnapshotCmd())
-	c.AddCommand(templatecmd.NewTemplateCmd())
-	c.AddCommand(volumecmd.NewVolumeCmd())
-	c.AddCommand(cmd.NewUpdateCmd(Version))
+	c.AddCommand(auth.Command())
+	c.AddCommand(sandbox.Command())
+	c.AddCommand(secret.Command())
+	c.AddCommand(snapshot.Command())
+	c.AddCommand(template.Command())
+	c.AddCommand(update.Command(Version))
+	c.AddCommand(volume.Command())
 
 	versionCmd := &cobra.Command{
 		Use:   "version",

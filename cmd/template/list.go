@@ -1,93 +1,88 @@
 package template
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/table"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/template"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/list"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 )
 
-// listedTemplate is a display-friendly view of TemplateInfo for table rendering.
-type listedTemplate struct {
-	ID         string    `table_field:"ID"`
-	Names      string    `table_field:"Name"`
-	Visibility string    `table_field:"Access"`
-	CPUCount   int       `table_field:"vCPU"`
-	MemoryMB   int       `table_field:"RAM (MB)"`
-	CreatedAt  time.Time `table_field:"Created"`
+type listOperation struct {
+	list list.Options
 }
 
-func toListedTemplate(t template.Info) listedTemplate {
+func (o *listOperation) Command() *cobra.Command {
+	c := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List templates",
+		Args:    cobra.NoArgs,
+	}
+
+	o.list.AddFlags(c)
+
+	return c
+}
+
+// listedTemplate is a display-friendly view of api.Template for table
+// rendering.
+type listedTemplate struct {
+	TemplateID string    `table_field:"-" json:"template_id"`
+	Names      string    `table_field:"Name" json:"names"`
+	Status     string    `table_field:"Status" json:"status"`
+	Visibility string    `table_field:"Access" json:"access"`
+	CPUCount   int32     `table_field:"vCPU" json:"cpu_count"`
+	MemoryMB   int32     `table_field:"RAM (MB)" json:"memory_mb"`
+	CreatedAt  time.Time `table_field:"Created" json:"created_at"`
+}
+
+func toListedTemplate(t api.Template) listedTemplate {
+	status := string(t.BuildStatus)
+	if status == "" {
+		status = "-"
+	}
+
+	visibility := "Private"
+	if t.Public {
+		visibility = "Public"
+	}
+
 	return listedTemplate{
-		ID:         t.TemplateID,
+		TemplateID: t.TemplateID,
 		Names:      strings.Join(t.Names, ", "),
-		Visibility: visibility(t.Public),
-		CPUCount:   t.CPUCount,
+		Status:     status,
+		Visibility: visibility,
+		CPUCount:   t.CpuCount,
 		MemoryMB:   t.MemoryMB,
 		CreatedAt:  t.CreatedAt,
 	}
 }
 
-func visibility(public bool) string {
-	if public {
-		return "Public"
-	}
-	return "Private"
-}
-
-func newListCmd() *cobra.Command {
-	var format string
-
-	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List sandbox templates",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-			templates, err := client.Templates().ListV2(ctx, template.ListV2Options{})
-			if err != nil {
-				return err
-			}
-
-			if format == "json" {
-				return json.NewEncoder(os.Stdout).Encode(templates)
-			}
-
-			if len(templates) == 0 {
-				fmt.Println("No templates found.")
-				return nil
-			}
-
-			rows := make([]listedTemplate, len(templates))
-			for i, t := range templates {
-				rows[i] = toListedTemplate(t)
-			}
-
-			out, err := table.Render(rows, 1, 0, int64(len(rows)))
-			if err != nil {
-				return err
-			}
-			fmt.Print(out)
-			return nil
-		},
+func (o *listOperation) Run(ctx cmd.OperationContext) error {
+	if err := o.list.Validate(); err != nil {
+		return err
 	}
 
-	cmd.Flags().StringVarP(&format, "format", "f", "pretty", "Output format (pretty, json)")
-	return cmd
+	// The endpoint is not paginated, so the whole listing arrives at once and
+	// is paged client-side.
+	templates, err := ctx.Client.Templates().ListV2(ctx)
+	if err != nil {
+		return err
+	}
+
+	rows := make([]listedTemplate, len(templates))
+	for i, tpl := range templates {
+		rows[i] = toListedTemplate(tpl)
+	}
+
+	page := list.FromSlice(rows, o.list.Page, o.list.Limit)
+
+	return list.Render(os.Stdout, page, o.list, identity, "No templates found.")
 }
+
+// identity is the row conversion for a page whose items are already rows.
+func identity(t listedTemplate) listedTemplate { return t }

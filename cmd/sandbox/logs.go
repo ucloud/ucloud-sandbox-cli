@@ -2,8 +2,8 @@ package sandbox
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sort"
@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/logs"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/errdefs"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
 )
 
 const (
@@ -25,75 +26,158 @@ const (
 	sandboxLogsPollPeriod = time.Second
 )
 
-func newLogsCmd() *cobra.Command {
-	var level, search string
-	var follow bool
+type logsOperation struct {
+	params api.SandboxLogsParamsV2
 
-	cmd := &cobra.Command{
+	follow bool
+}
+
+func (o *logsOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "logs <sandbox-id>",
 		Aliases: []string{"log", "lg"},
 		Short:   "Print the logs of a sandbox",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			if follow {
-				// Ctrl+C ends the stream without failing the command.
-				var stop context.CancelFunc
-				ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-				defer stop()
-			}
-
-			return printSandboxLogs(ctx, client, args[0], level, search, follow)
-		},
 	}
 
-	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, error)")
-	cmd.Flags().StringVar(&search, "search", "", "Only print entries whose message contains this substring")
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep streaming logs until the sandbox stops")
-	return cmd
+	flags.NullableInt64VarP(c.Flags(), &o.params.Cursor, "cursor", "",
+		"Millisecond timestamp to start from")
+	flags.NullableStringVarP(c.Flags(), &o.params.Direction, "direction", "d",
+		fmt.Sprintf("Direction to walk the log in (forward, backward) (default %s)", api.LogsDirectionForward))
+	flags.NullableInt32VarP(c.Flags(), &o.params.Limit, "limit", "l",
+		fmt.Sprintf("Maximum number of entries per request (default %d)", sandboxLogsPageSize))
+	flags.NullableStringVarP(c.Flags(), &o.params.Level, "level", "",
+		"Minimum log level to print (debug, info, warn, error)")
+	flags.NullableStringVarP(c.Flags(), &o.params.Search, "search", "",
+		"Only print entries whose message contains this substring")
+
+	c.Flags().BoolVarP(&o.follow, "follow", "f", false, "Keep streaming logs until the sandbox stops")
+
+	return c
 }
 
-func printSandboxLogs(ctx context.Context, client *client.Client, sandboxID, level, search string, follow bool) error {
+// validate checks the flag values against each other.
+func (o *logsOperation) validate() error {
+	if o.params.Direction != nil && !o.params.Direction.Valid() {
+		return fmt.Errorf("invalid --direction %q: expected %s or %s",
+			*o.params.Direction, api.LogsDirectionForward, api.LogsDirectionBackward)
+	}
+
+	if o.params.Level != nil && !o.params.Level.Valid() {
+		return fmt.Errorf("invalid --level %q: expected %s, %s, %s or %s",
+			*o.params.Level, api.LogLevelDebug, api.LogLevelInfo, api.LogLevelWarn, api.LogLevelError)
+	}
+
+	// Following means walking the cursor towards newer entries, which only the
+	// forward direction does.
+	if o.follow && o.params.Direction != nil && *o.params.Direction == api.LogsDirectionBackward {
+		return fmt.Errorf("--follow needs --direction %s", api.LogsDirectionForward)
+	}
+
+	return nil
+}
+
+// defaulted returns the request params with the values the streaming loop
+// relies on filled in.
+func (o *logsOperation) defaulted() api.SandboxLogsParamsV2 {
+	params := o.params
+
+	if params.Direction == nil {
+		direction := api.LogsDirectionForward
+		params.Direction = &direction
+	}
+
+	if params.Limit == nil || *params.Limit <= 0 {
+		limit := int32(sandboxLogsPageSize)
+		params.Limit = &limit
+	}
+
+	return params
+}
+
+func (o *logsOperation) Run(ctx cmd.OperationContext) error {
+	if err := o.validate(); err != nil {
+		return err
+	}
+
+	params := o.defaulted()
+	client := ctx.Client.Sandboxes()
+
+	// Walking backwards starts at the newest entry, so there is no cursor to
+	// follow and one request is the whole answer.
+	if *params.Direction == api.LogsDirectionBackward {
+		entries, err := client.LogsV2(ctx, ctx.Args[0], &params)
+		if err != nil {
+			return err
+		}
+
+		return printSandboxLogs(os.Stdout, entries)
+	}
+
+	var streamCtx context.Context = ctx
+	if o.follow {
+		// Ctrl+C ends the stream without failing the command.
+		var stop context.CancelFunc
+		streamCtx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
+
+	return streamSandboxLogs(streamCtx, os.Stdout, client, ctx.Args[0], params, o.follow)
+}
+
+// printSandboxLogs writes the entries one formatted line each.
+func printSandboxLogs(out io.Writer, entries []api.SandboxLogEntry) error {
+	for _, entry := range entries {
+		if _, err := fmt.Fprintln(out, formatSandboxLogEntry(entry)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// logsClient is the client subset used to read sandbox logs.
+type logsClient interface {
+	LogsV2(ctx context.Context, sandboxID string, params *api.SandboxLogsParamsV2) ([]api.SandboxLogEntry, error)
+	Get(ctx context.Context, sandboxID string) (*api.SandboxDetail, error)
+}
+
+// streamSandboxLogs prints the sandbox's logs from the cursor onwards. Without
+// follow it returns once the listing is exhausted; with it, it keeps polling
+// until the sandbox stops or ctx is done.
+func streamSandboxLogs(
+	ctx context.Context,
+	out io.Writer,
+	client logsClient,
+	sandboxID string,
+	params api.SandboxLogsParamsV2,
+	follow bool,
+) error {
+	pageSize := int(*params.Limit)
+
 	cursor := newSandboxLogsCursor()
+	if params.Cursor != nil {
+		cursor.SeekTo(*params.Cursor)
+	}
+
 	// draining is the final pass after the sandbox stopped, so that entries
 	// written just before the end are still reported.
 	draining := false
 
 	for {
-		opts := sandbox.LogsV2Options{
-			Limit:     sandboxLogsPageSize,
-			Direction: sandbox.LogsDirectionForward,
-		}
-		if cursor.ms > 0 {
-			opts.CursorMs = new(cursor.ms)
-		}
-		if level != "" {
-			opts.Level = level
-		}
-		if search != "" {
-			opts.Search = search
+		page := params
+		if ms := cursor.At(); ms > 0 {
+			page.Cursor = &ms
 		}
 
-		page, err := client.Sandboxes().LogsV2(ctx, sandboxID, opts)
+		entries, err := client.LogsV2(ctx, sandboxID, &page)
 		if err != nil {
 			return err
 		}
 
-		fresh, more := cursor.advance(page, len(page) >= sandboxLogsPageSize)
-		for _, entry := range fresh {
-			fmt.Println(formatSandboxLogEntry(entry))
+		fresh, more := cursor.Advance(entries, len(entries) >= pageSize)
+		if err := printSandboxLogs(out, fresh); err != nil {
+			return err
 		}
 		if more {
 			continue
@@ -118,107 +202,69 @@ func printSandboxLogs(ctx context.Context, client *client.Client, sandboxID, lev
 
 // isSandboxRunning reports whether the sandbox still produces logs. A sandbox
 // that no longer exists counts as stopped rather than as an error.
-func isSandboxRunning(ctx context.Context, client *client.Client, sandboxID string) (bool, error) {
-	info, err := client.Sandboxes().Get(ctx, sandboxID)
+func isSandboxRunning(ctx context.Context, client logsClient, sandboxID string) (bool, error) {
+	detail, err := client.Get(ctx, sandboxID)
 	if err != nil {
-		var notFound *errdefs.NotFoundError
-		if errors.As(err, &notFound) {
+		if errdefs.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return strings.EqualFold(string(info.State), "running"), nil
+
+	return detail.State == api.Running, nil
 }
 
-// sandboxLogsCursor tracks the forward pagination position of sandbox logs. The
-// endpoint takes a millisecond timestamp as its cursor, so entries sharing the
-// millisecond of the previous page's last entry are returned again and have to
-// be filtered out.
-type sandboxLogsCursor struct {
-	ms   int64
-	seen map[string]struct{}
+// newSandboxLogsCursor returns the pagination cursor for a sandbox's logs.
+func newSandboxLogsCursor() *logs.Cursor[api.SandboxLogEntry] {
+	return logs.NewCursor(
+		func(entry api.SandboxLogEntry) time.Time { return entry.Timestamp },
+		sandboxLogSignature,
+	)
 }
 
-func newSandboxLogsCursor() *sandboxLogsCursor {
-	return &sandboxLogsCursor{seen: map[string]struct{}{}}
-}
-
-// advance returns the entries of page that have not been reported yet and
-// whether another page should be requested right away. pageFull tells whether
-// the page reached the requested limit, meaning more entries may be waiting.
-func (c *sandboxLogsCursor) advance(page []sandbox.LogEntry, pageFull bool) ([]sandbox.LogEntry, bool) {
-	if len(page) == 0 {
-		return nil, false
-	}
-
-	fresh := make([]sandbox.LogEntry, 0, len(page))
-	for _, entry := range page {
-		ms := entry.Timestamp.UnixMilli()
-		if ms < c.ms {
-			continue
-		}
-		if ms == c.ms {
-			if _, ok := c.seen[sandboxLogSignature(entry)]; ok {
-				continue
-			}
-		}
-		fresh = append(fresh, entry)
-	}
-
-	lastMs := page[len(page)-1].Timestamp.UnixMilli()
-	if pageFull && lastMs == c.ms && len(fresh) == 0 {
-		// A full page holds nothing but already reported entries of the cursor
-		// millisecond. Step over it, otherwise the same page repeats forever.
-		c.ms++
-		c.seen = map[string]struct{}{}
-		return fresh, true
-	}
-
-	if lastMs != c.ms {
-		c.ms = lastMs
-		c.seen = map[string]struct{}{}
-	}
-	for _, entry := range page {
-		if entry.Timestamp.UnixMilli() == c.ms {
-			c.seen[sandboxLogSignature(entry)] = struct{}{}
-		}
-	}
-	return fresh, pageFull
-}
-
-func sandboxLogSignature(entry sandbox.LogEntry) string {
+// sandboxLogSignature identifies an entry by its content, so the same entry
+// returned twice across pages is recognized.
+func sandboxLogSignature(entry api.SandboxLogEntry) string {
 	var b strings.Builder
-	b.WriteString(entry.Level)
+
+	b.WriteString(string(entry.Level))
 	b.WriteString("\x00")
 	b.WriteString(entry.Message)
+
 	for _, key := range sortedFieldKeys(entry.Fields) {
 		b.WriteString("\x00")
 		b.WriteString(key)
 		b.WriteString("=")
 		b.WriteString(entry.Fields[key])
 	}
+
 	return b.String()
 }
 
 // formatSandboxLogEntry renders one entry as "<timestamp> [<level>] <message> <key=value...>".
-func formatSandboxLogEntry(entry sandbox.LogEntry) string {
+func formatSandboxLogEntry(entry api.SandboxLogEntry) string {
 	var b strings.Builder
+
 	b.WriteString(entry.Timestamp.In(time.Local).Format(sandboxLogTimeFormat))
+
 	if entry.Level != "" {
 		b.WriteString(" [")
-		b.WriteString(strings.ToUpper(entry.Level))
+		b.WriteString(strings.ToUpper(string(entry.Level)))
 		b.WriteString("]")
 	}
+
 	if entry.Message != "" {
 		b.WriteString(" ")
 		b.WriteString(entry.Message)
 	}
+
 	for _, key := range sortedFieldKeys(entry.Fields) {
 		b.WriteString(" ")
 		b.WriteString(key)
 		b.WriteString("=")
 		b.WriteString(entry.Fields[key])
 	}
+
 	return b.String()
 }
 
@@ -226,10 +272,12 @@ func sortedFieldKeys(fields map[string]string) []string {
 	if len(fields) == 0 {
 		return nil
 	}
+
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+
 	return keys
 }

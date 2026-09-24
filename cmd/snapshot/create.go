@@ -1,60 +1,41 @@
 package snapshot
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 )
 
-func newCreateCmd() *cobra.Command {
-	var name string
+type createOperation struct {
+	req api.SandboxSnapshotRequest
+}
 
-	cmd := &cobra.Command{
+func (o *createOperation) Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "create <sandbox-id>",
 		Aliases: []string{"cr"},
-		Short:   "Create a snapshot from a sandbox",
+		Short:   "Snapshot a sandbox",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sandboxID := args[0]
-
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			ctx := context.Background()
-
-			// Connect to the sandbox first
-			sbx, err := client.Sandboxes().Connect(ctx, sandboxID, sandbox.ConnectOptions{})
-			if err != nil {
-				return fmt.Errorf("failed to connect to sandbox %s: %w", sandboxID, err)
-			}
-
-			// Create snapshot from the sandbox
-			snapshot, err := sbx.CreateSnapshot(ctx, sandbox.SnapshotOptions{
-				Name: name,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create snapshot: %w", err)
-			}
-
-			if name != "" {
-				fmt.Printf("Snapshot created: %s (%s)\n", snapshot.SnapshotID, name)
-			} else {
-				fmt.Printf("Snapshot created: %s\n", snapshot.SnapshotID)
-			}
-			return nil
-		},
 	}
 
-	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name")
+	flags.NullableStringVarP(c.Flags(), &o.req.Name, "name", "n",
+		"Name for the snapshot; reusing one adds a build to that snapshot instead of making a new one")
 
-	return cmd
+	return c
+}
+
+func (o *createOperation) Run(ctx cmd.OperationContext) error {
+	snapshot, err := ctx.Client.Sandboxes().CreateSnapshot(ctx, ctx.Args[0], o.req)
+	if err != nil {
+		return err
+	}
+
+	// The ID is what `sandbox create` takes as its template, which is how a
+	// snapshot is booted again.
+	fmt.Printf("Snapshot created: %s\n", snapshot.SnapshotID)
+
+	return nil
 }

@@ -4,40 +4,38 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 )
 
-func newDeleteCmd() *cobra.Command {
-	cmd := &cobra.Command{
+type deleteOperation struct{}
+
+func (o *deleteOperation) Command() *cobra.Command {
+	return &cobra.Command{
 		Use:     "delete <volume-id...>",
-		Aliases: []string{"dl"},
+		Aliases: []string{"dl", "rm"},
 		Short:   "Delete one or more volumes",
 		Args:    cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
+	}
+}
 
-			for _, id := range args {
-				deleted, err := client.Volumes().Delete(cmd.Context(), id)
-				if err != nil {
-					return fmt.Errorf("failed to delete volume %s: %w", id, err)
-				}
-				if !deleted {
-					fmt.Fprintf(cmd.OutOrStdout(), "Volume not found: %s\n", id)
-					continue
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Deleted volume: %s\n", id)
-			}
+func (o *deleteOperation) Run(ctx cmd.OperationContext) error {
+	// Deleting stops at the first failure, so a broken run does not keep
+	// destroying volumes.
+	for _, id := range ctx.Args {
+		deleted, err := ctx.Client.Volumes().Delete(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to delete volume %s: %w", id, err)
+		}
 
-			return nil
-		},
+		// A volume that is already gone satisfies the intent, so it is
+		// reported rather than treated as a failure.
+		if !deleted {
+			fmt.Printf("Volume %s not found.\n", id)
+			continue
+		}
+
+		fmt.Printf("Volume %s deleted.\n", id)
 	}
 
-	return cmd
+	return nil
 }

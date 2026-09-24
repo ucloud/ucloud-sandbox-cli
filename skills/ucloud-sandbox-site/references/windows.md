@@ -90,14 +90,14 @@ if ($LASTEXITCODE -ne 0) { throw "Site connection verification failed." }
 
 ```powershell
 ucloud-sandbox-cli sandbox exec $SandboxId "pwd && ls -la /home/user"
-ucloud-sandbox-cli fs ls $SandboxId /home/user --format json
-ucloud-sandbox-cli fs mkdir $SandboxId /home/user/site
+ucloud-sandbox-cli sandbox fs ls $SandboxId /home/user --format json
+ucloud-sandbox-cli sandbox fs mkdir $SandboxId /home/user/site
 
 # 上传
-ucloud-sandbox-cli fs cp "C:\work\index.html" "${SandboxId}:/home/user/site/index.html"
+ucloud-sandbox-cli sandbox fs cp "C:\work\index.html" "${SandboxId}:/home/user/site/index.html"
 
 # 下载
-ucloud-sandbox-cli fs cp "${SandboxId}:/home/user/site/service.log" "C:\work\service.log"
+ucloud-sandbox-cli sandbox fs cp "${SandboxId}:/home/user/site/service.log" "C:\work\service.log"
 ```
 
 读取文件、删除文件、部署服务和查看环境变量时，继续遵守主 `SKILL.md` 的敏感信息与破坏性操作限制。
@@ -119,7 +119,7 @@ try {
     -czf $Archive -C $LocalProjectDir .
   if ($LASTEXITCODE -ne 0) { throw "Failed to create deployment archive." }
 
-  ucloud-sandbox-cli fs cp $Archive "${SandboxId}:/tmp/site-release.tgz"
+  ucloud-sandbox-cli sandbox fs cp $Archive "${SandboxId}:/tmp/site-release.tgz"
   if ($LASTEXITCODE -ne 0) { throw "Failed to upload deployment archive." }
 
   ucloud-sandbox-cli sandbox exec $SandboxId `

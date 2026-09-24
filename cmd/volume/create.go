@@ -4,34 +4,29 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 )
 
-func newCreateCmd() *cobra.Command {
-	cmd := &cobra.Command{
+type createOperation struct{}
+
+func (o *createOperation) Command() *cobra.Command {
+	return &cobra.Command{
 		Use:     "create <name>",
 		Aliases: []string{"cr"},
 		Short:   "Create a volume",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-			client, err := config.NewClient(cfg)
-			if err != nil {
-				return err
-			}
+	}
+}
 
-			volume, err := client.Volumes().Create(cmd.Context(), args[0])
-			if err != nil {
-				return fmt.Errorf("failed to create volume: %w", err)
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "Volume created: %s\n", volume.ID)
-			return nil
-		},
+func (o *createOperation) Run(ctx cmd.OperationContext) error {
+	// The response also carries the volume's content token, which `get`
+	// returns; a created volume is reported by its ID alone.
+	vol, err := ctx.Client.Volumes().Create(ctx, ctx.Args[0])
+	if err != nil {
+		return err
 	}
 
-	return cmd
+	fmt.Printf("Volume created: %s\n", vol.VolumeID)
+
+	return nil
 }

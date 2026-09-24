@@ -248,8 +248,14 @@ func headers(cols []column) []string {
 }
 
 // renderHeader returns the "Page: X/Y, Total: N" line (no trailing newline).
-// When pageSize <= 0, totalPages falls back to 1 unless total is 0.
+// When pageSize <= 0, totalPages falls back to 1 unless total is 0. A negative
+// total means the source does not report one (e.g. a cursor-paginated listing
+// that has not been walked to its end), and both counts render as "?".
 func renderHeader(page, pageSize int, total int64) string {
+	if total < 0 {
+		return fmt.Sprintf("Page: %d/?, Total: ?", page)
+	}
+
 	var totalPages int64
 	switch {
 	case total <= 0:

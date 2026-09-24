@@ -6,11 +6,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox/pty"
 	"golang.org/x/term"
 )
 
-func watchTerminalResize(ctx context.Context, fd int, handle *sandbox.PtyHandle, cols, rows int) func() {
+func watchTerminalResize(ctx context.Context, fd int, handle *pty.Handle, cols, rows int) func() {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -27,7 +27,7 @@ func watchTerminalResize(ctx context.Context, fd int, handle *sandbox.PtyHandle,
 				if err != nil || (newCols == cols && newRows == rows) {
 					continue
 				}
-				if err := handle.Resize(ctx, sandbox.PtySize{Cols: newCols, Rows: newRows}); err == nil {
+				if err := handle.Resize(ctx, pty.Size{Cols: newCols, Rows: newRows}); err == nil {
 					cols, rows = newCols, newRows
 				}
 			}

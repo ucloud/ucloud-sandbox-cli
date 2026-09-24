@@ -1,22 +1,25 @@
 package template
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/template/tag"
+)
 
-// NewTemplateCmd returns the root template command group.
-func NewTemplateCmd() *cobra.Command {
-	cmd := &cobra.Command{
+// Command returns the root template command group.
+func Command() *cobra.Command {
+	c := &cobra.Command{
 		Use:     "template",
 		Aliases: []string{"tpl"},
-		Short:   "Manage sandbox templates",
+		Short:   "Manage the templates sandboxes boot from",
 	}
-	cmd.AddCommand(newListCmd())
-	cmd.AddCommand(newGetCmd())
-	cmd.AddCommand(newLogsCmd())
-	cmd.AddCommand(newBuildCmd())
-	cmd.AddCommand(newCreateCmd())
-	cmd.AddCommand(newDeleteCmd())
-	cmd.AddCommand(newPublishCmd())
-	cmd.AddCommand(newInitCmd())
-	cmd.AddCommand(newTagCmd())
-	return cmd
+	c.AddCommand(cmd.Build(&buildOperation{}))
+	c.AddCommand(cmd.Build(&deleteOperation{}))
+	c.AddCommand(cmd.Build(&getOperation{}))
+	c.AddCommand(cmd.Build(&initOperation{}))
+	c.AddCommand(cmd.Build(&listOperation{}))
+	c.AddCommand(cmd.Build(&logsOperation{}))
+	c.AddCommand(cmd.Build(&publishOperation{}))
+	c.AddCommand(tag.Command())
+	return c
 }
