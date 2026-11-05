@@ -17,6 +17,7 @@ import (
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/prompt"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/selfupdate"
+	"golang.org/x/term"
 )
 
 // Command returns the update command. version is the one stamped into this
@@ -160,18 +161,38 @@ func (o *updateOperation) Run(ctx cmd.OperationContext) error {
 
 // download fetches a release asset while rendering a progress bar.
 func download(ctx context.Context, client *selfupdate.Client, asset selfupdate.Asset) ([]byte, error) {
+	width, _, err := term.GetSize(int(os.Stderr.Fd()))
+	// Leave room for byte counts, speed and ETA; use plain output when the
+	// terminal cannot fit them or the output is being redirected.
+	interactive := term.IsTerminal(int(os.Stderr.Fd())) && err == nil && width >= 80 && os.Getenv("TERM") != "dumb"
+	return downloadWithProgress(ctx, client, asset, os.Stderr, interactive)
+}
+
+func downloadWithProgress(ctx context.Context, client *selfupdate.Client, asset selfupdate.Asset, out io.Writer, interactive bool) ([]byte, error) {
+	// Keep the long asset name out of the line that is redrawn.
+	fmt.Fprintf(out, "Downloading %s...\n", asset.Name)
+	buf := &bytes.Buffer{}
+	if !interactive {
+		if err := client.Download(ctx, asset.DownloadURL, buf); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
+
 	bar := progressbar.NewOptions64(
 		asset.Size,
-		progressbar.OptionSetDescription("Downloading "+asset.Name),
-		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetDescription("Downloading"),
+		progressbar.OptionSetWriter(out),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionUseANSICodes(true),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionShowCount(),
 		progressbar.OptionThrottle(100*time.Millisecond),
-		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
+		progressbar.OptionOnCompletion(func() { fmt.Fprintln(out) }),
 	)
 
-	buf := &bytes.Buffer{}
 	if err := client.Download(ctx, asset.DownloadURL, io.MultiWriter(buf, bar)); err != nil {
+		fmt.Fprintln(out)
 		return nil, err
 	}
 	if err := bar.Finish(); err != nil {
