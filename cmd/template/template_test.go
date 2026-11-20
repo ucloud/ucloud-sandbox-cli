@@ -67,6 +67,7 @@ func TestToListedTemplate(t *testing.T) {
 	row := toListedTemplate(api.Template{
 		TemplateID:  "tpl-1",
 		Names:       []string{"team/demo", "demo"},
+		EnvdVersion: "0.9.0",
 		BuildStatus: api.TemplateBuildStatusReady,
 		Public:      true,
 		CpuCount:    2,
@@ -75,13 +76,14 @@ func TestToListedTemplate(t *testing.T) {
 	})
 
 	assert.Equal(t, listedTemplate{
-		TemplateID: "tpl-1",
-		Names:      "team/demo, demo",
-		Status:     "ready",
-		Visibility: "Public",
-		CPUCount:   2,
-		MemoryMB:   2048,
-		CreatedAt:  created,
+		TemplateID:  "tpl-1",
+		Names:       "team/demo, demo",
+		EnvdVersion: "0.9.0",
+		Status:      "ready",
+		Visibility:  "Public",
+		CPUCount:    2,
+		MemoryMB:    2048,
+		CreatedAt:   created,
 	}, row)
 }
 
