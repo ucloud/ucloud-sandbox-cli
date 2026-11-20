@@ -20,7 +20,7 @@ func (v *stringMapValue[M]) String() string {
 }
 
 func (v *stringMapValue[M]) Set(s string) error {
-	key, value, err := parseStringMapEntry(s)
+	key, value, err := parseStringMapEntry(s, false)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,8 @@ func StringMapVarP[M ~map[string]string](
 // nullableStringMapValue binds a repeatable "key: value" flag to a nullable map
 // field.
 type nullableStringMapValue[M ~map[string]string] struct {
-	target **M
+	target    **M
+	lastColon bool
 }
 
 func (v *nullableStringMapValue[M]) String() string {
@@ -63,7 +64,7 @@ func (v *nullableStringMapValue[M]) String() string {
 }
 
 func (v *nullableStringMapValue[M]) Set(s string) error {
-	key, value, err := parseStringMapEntry(s)
+	key, value, err := parseStringMapEntry(s, v.lastColon)
 	if err != nil {
 		return err
 	}
@@ -93,15 +94,28 @@ func NullableStringMapVarP[M ~map[string]string](
 	fs.VarP(&nullableStringMapValue[M]{target: target}, name, shorthand, usage)
 }
 
+// NullableStringMapLastColonVarP is like NullableStringMapVarP, but splits each
+// entry at the last colon so keys may contain colons.
+func NullableStringMapLastColonVarP[M ~map[string]string](
+	fs *pflag.FlagSet,
+	target **M,
+	name, shorthand, usage string,
+) {
+	fs.VarP(&nullableStringMapValue[M]{target: target, lastColon: true}, name, shorthand, usage)
+}
+
 // parseStringMapEntry splits one "key: value" occurrence of a map flag.
-func parseStringMapEntry(s string) (string, string, error) {
-	key, value, ok := strings.Cut(s, ":")
-	if !ok {
+func parseStringMapEntry(s string, lastColon bool) (string, string, error) {
+	index := strings.Index(s, ":")
+	if lastColon {
+		index = strings.LastIndex(s, ":")
+	}
+	if index < 0 {
 		return "", "", fmt.Errorf("invalid map value %q: expected key: value", s)
 	}
 
-	key = strings.TrimSpace(key)
-	value = strings.TrimSpace(value)
+	key := strings.TrimSpace(s[:index])
+	value := strings.TrimSpace(s[index+1:])
 
 	if key == "" {
 		return "", "", fmt.Errorf("invalid map value %q: key cannot be empty", s)

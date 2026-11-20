@@ -43,8 +43,8 @@ func (o *createOperation) Command() *cobra.Command {
 		"Let traffic resume the sandbox once it is paused")
 	flags.NullableStringMapVarP(cmd.Flags(), &o.req.EnvVars, "env", "e",
 		"Environment variable of the sandbox, as key: value")
-	flags.NullableStringMapVarP(cmd.Flags(), &o.req.Metadata, "metadata", "m",
-		"Metadata entry stored with the sandbox, as key: value")
+	flags.NullableStringMapLastColonVarP(cmd.Flags(), &o.req.Metadata, "metadata", "m",
+		"Metadata entry stored with the sandbox, as key: value (split at the last colon)")
 	sandboxNetworkConfigVarP(cmd.Flags(), &o.req.Network, "network-")
 	flags.NullableBoolVarP(cmd.Flags(), &o.req.Secure, "secure", "",
 		"Secure all system communication with the sandbox")

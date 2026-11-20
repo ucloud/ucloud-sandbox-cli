@@ -66,7 +66,10 @@ func TestCreateSimpleFlags(t *testing.T) {
 		"--auto-pause-memory=false",
 		"-e", "FOO: bar",
 		"--env", "BAZ:qux",
+		"--env", "URL: https://example.com:8080",
 		"-m", "user: abc",
+		"-m", "ucloud.cn/volume.v2:test-volume: /mnt",
+		"--metadata", "  namespace:resource:name: /data  ",
 		"--secure",
 		"--timeout", "300",
 	)
@@ -78,9 +81,13 @@ func TestCreateSimpleFlags(t *testing.T) {
 	require.NotNil(t, req.AutoPauseMemory)
 	assert.False(t, *req.AutoPauseMemory)
 	require.NotNil(t, req.EnvVars)
-	assert.Equal(t, api.EnvVars{"FOO": "bar", "BAZ": "qux"}, *req.EnvVars)
+	assert.Equal(t, api.EnvVars{"FOO": "bar", "BAZ": "qux", "URL": "https://example.com:8080"}, *req.EnvVars)
 	require.NotNil(t, req.Metadata)
-	assert.Equal(t, api.SandboxMetadata{"user": "abc"}, *req.Metadata)
+	assert.Equal(t, api.SandboxMetadata{
+		"user":                            "abc",
+		"ucloud.cn/volume.v2:test-volume": "/mnt",
+		"namespace:resource:name":         "/data",
+	}, *req.Metadata)
 	require.NotNil(t, req.Secure)
 	assert.True(t, *req.Secure)
 	require.NotNil(t, req.Timeout)
