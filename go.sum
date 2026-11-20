@@ -72,8 +72,8 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/ucloud/ucloud-sandbox-sdk-go v0.4.1 h1:aGEKSXnCpQcsoc82IdGNNKdiGCQT2wi/2mEBbHynuc4=
-github.com/ucloud/ucloud-sandbox-sdk-go v0.4.1/go.mod h1:yAGdMxnXt1xmVwH+wzsYkF0iobYei+M3aU8AGPD1DsA=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.5.0 h1:0fikqbQrVPBDQzwUyQjcTPuAR683I+aZbhvRYYeOfvE=
+github.com/ucloud/ucloud-sandbox-sdk-go v0.5.0/go.mod h1:yAGdMxnXt1xmVwH+wzsYkF0iobYei+M3aU8AGPD1DsA=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=

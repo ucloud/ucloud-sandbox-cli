@@ -3,6 +3,7 @@ package volume
 import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	volumev2 "github.com/ucloud/ucloud-sandbox-cli/cmd/volume/v2"
 )
 
 // Command returns the root volume command group.
@@ -16,5 +17,6 @@ func Command() *cobra.Command {
 	c.AddCommand(cmd.Build(&deleteOperation{}))
 	c.AddCommand(cmd.Build(&getOperation{}))
 	c.AddCommand(cmd.Build(&listOperation{}))
+	c.AddCommand(volumev2.Command())
 	return c
 }

@@ -247,3 +247,37 @@ func TestCreateMountFlagRejectsInvalidValue(t *testing.T) {
 		assert.Error(t, err, "mount %q should be rejected", mount)
 	}
 }
+
+func TestCreateMount2PreservesMetadataAndV1Mounts(t *testing.T) {
+	req := parseCreateFlags(t,
+		"--metadata", "app: worker",
+		"--mount2", "data:/mnt/data",
+		"--mount", "legacy:/mnt/legacy",
+		"--mount2", " cache : /mnt/cache ",
+		"--metadata", "owner: team",
+		"--mount2", "data:/mnt/new-data",
+	)
+
+	require.NotNil(t, req.Metadata)
+	assert.Equal(t, api.SandboxMetadata{
+		"app": "worker", "owner": "team",
+		"volume.v2.sandbox.ucloudai.com:data":  "/mnt/new-data",
+		"volume.v2.sandbox.ucloudai.com:cache": "/mnt/cache",
+	}, *req.Metadata)
+	require.NotNil(t, req.VolumeMounts)
+	assert.Equal(t, []api.SandboxVolumeMount{{Name: "legacy", Path: "/mnt/legacy"}}, *req.VolumeMounts)
+}
+
+func TestCreateMount2OnlyUsesMetadata(t *testing.T) {
+	req := parseCreateFlags(t, "--mount2", "data:/mnt/data")
+
+	require.NotNil(t, req.Metadata)
+	assert.Equal(t, api.SandboxMetadata{"volume.v2.sandbox.ucloudai.com:data": "/mnt/data"}, *req.Metadata)
+	assert.Nil(t, req.VolumeMounts)
+}
+
+func TestCreateMount2RejectsInvalidValue(t *testing.T) {
+	for _, mount := range []string{"data", "", ":", "data:", ":/mnt/data", "data:relative/path", " : /mnt"} {
+		assert.Error(t, parseCreateFlagsErr(t, "--mount2", mount), "mount %q should be rejected", mount)
+	}
+}

@@ -200,6 +200,14 @@ ucloud-sandbox-cli sandbox create base \
   --mount <volume-name-2>:/cache
 ```
 
+V2 Volume 使用 `--mount2`，按名称挂载到沙箱内的绝对路径；可重复指定，也可与 `--mount` 一起使用。挂载前需将沙箱模板中的 envd 升级到 **0.9.0 或更高版本**，并使用升级后的模板创建沙箱：
+
+```bash
+ucloud-sandbox-cli sandbox create base \
+  --mount2 <v2-volume-name-1>:/data \
+  --mount2 <v2-volume-name-2>:/cache
+```
+
 开启自动暂停/自动恢复后，沙箱在超时被暂停后，下次访问时会自动恢复运行：
 
 ```bash
@@ -391,6 +399,18 @@ ucloud-sandbox-cli sandbox create base \
 
 ## Volume 管理
 
+Volume v1 和 v2 的底层存储及资源分配方式不同：
+
+| 对比项 | Volume v1 | Volume v2 |
+| --- | --- | --- |
+| 底层存储 | 所有用户共享一个底层 NFS | 每个 Volume 对应一个托管于云平台的独立 NFS Volume |
+| 容量 | 所有用户共享 | 每个 Volume 拥有独立容量，可单独扩容 |
+| 带宽 | 所有用户共享 | 每个 Volume 拥有独立带宽 |
+| 管理命令 | `volume <command>` | `volume v2 <command>` |
+| 挂载参数 | `--mount <name>:/path` | `--mount2 <name>:/path` |
+
+### Volume v1
+
 创建持久化 Volume：
 
 ```bash
@@ -414,6 +434,43 @@ ucloud-sandbox-cli vol get <volume-id>
 
 ```bash
 ucloud-sandbox-cli vol delete <volume-id...>
+```
+
+### Volume v2
+
+通过 `volume v2`（或 `vol v2`）管理云 NFS Volume，容量单位为 GiB。Basic 类型默认至少 500 GiB，Advanced 类型至少 100 GiB：
+
+```bash
+ucloud-sandbox-cli volume v2 create data --size-gib 500
+ucloud-sandbox-cli volume v2 create fast-data --size-gib 100 \
+  --extra-params '{"storageType":"Advanced"}' \
+  --idempotency-key create-fast-data
+
+ucloud-sandbox-cli volume v2 list
+ucloud-sandbox-cli volume v2 list --page 2 --limit 10 --format json
+ucloud-sandbox-cli volume v2 get <volume-id>
+ucloud-sandbox-cli volume v2 resize <volume-id> --size-gib 1000
+ucloud-sandbox-cli volume v2 delete <volume-id...>
+```
+
+`get`、`resize`、`delete` 使用 Volume UUID；创建沙箱时的 `--mount2` 使用 Volume 名称。扩容只支持增大容量。
+
+#### 挂载 Volume v2
+
+挂载 Volume v2 需要沙箱内的 **envd 0.9.0 或更高版本**。请先升级沙箱模板中的 envd，再使用升级后的模板创建沙箱。
+
+创建 Volume 后，在创建沙箱时通过 `--mount2 <volume-name>:<mount-path>` 指定 Volume 名称和沙箱内的绝对路径。例如，将上面创建的 `data` 挂载到 `/data`：
+
+```bash
+ucloud-sandbox-cli sandbox create <template> --mount2 data:/data
+```
+
+重复指定 `--mount2` 可以挂载多个 Volume，也可与 v1 的 `--mount` 一起使用。同一个 v2 Volume 名称重复指定时，以最后一次指定的路径为准：
+
+```bash
+ucloud-sandbox-cli sandbox create <template> \
+  --mount2 data:/data \
+  --mount2 fast-data:/fast-data
 ```
 
 ## 模板构建管理
@@ -508,7 +565,7 @@ ucloud-sandbox-cli tpl delete --select
 
 ## 输出格式与分页
 
-所有列表类命令（`sandbox list`、`volume list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`）都支持同一组参数：
+所有列表类命令（`sandbox list`、`volume list`、`volume v2 list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`）都支持同一组参数：
 
 ```bash
 -f, --format string   输出格式，pretty 或 json（默认 pretty）

@@ -50,8 +50,14 @@ func TestCommandsAreRegistered(t *testing.T) {
 		names[c.Name()] = true
 	}
 
-	for _, name := range []string{"create", "get", "list", "delete"} {
+	for _, name := range []string{"create", "get", "list", "delete", "v2"} {
 		assert.True(t, names[name], "volume %s is missing", name)
+	}
+	for _, name := range []string{"create", "get", "list", "delete", "resize"} {
+		c, _, err := Command().Find([]string{"v2", name})
+		require.NoError(t, err)
+		assert.Equal(t, name, c.Name())
+		assert.Equal(t, "volume v2 "+name, c.CommandPath())
 	}
 }
 
