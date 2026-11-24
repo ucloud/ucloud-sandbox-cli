@@ -59,6 +59,12 @@ func TestCommandsAreRegistered(t *testing.T) {
 		assert.Equal(t, name, c.Name())
 		assert.Equal(t, "volume v2 "+name, c.CommandPath())
 	}
+	for _, name := range []string{"upload", "download", "list", "ls", "mkdir", "remove", "rm", "stat"} {
+		c, remaining, err := Command().Find([]string{"v2", "fs", name})
+		require.NoError(t, err)
+		assert.Empty(t, remaining)
+		assert.Equal(t, "volume v2 fs", c.Parent().CommandPath())
+	}
 }
 
 func TestDeleteNeedsAtLeastOneVolume(t *testing.T) {

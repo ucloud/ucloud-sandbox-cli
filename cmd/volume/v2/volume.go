@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/volume/v2/fs"
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/v2/api"
 )
 
@@ -20,6 +21,7 @@ func Command() *cobra.Command {
 	c.AddCommand(cmd.Build(&getOperation{}))
 	c.AddCommand(cmd.Build(&listOperation{}))
 	c.AddCommand(cmd.Build(&resizeOperation{}))
+	c.AddCommand(fs.Command())
 	return c
 }
 

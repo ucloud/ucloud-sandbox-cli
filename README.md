@@ -455,6 +455,36 @@ ucloud-sandbox-cli volume v2 delete <volume-id...>
 
 `get`、`resize`、`delete` 使用 Volume UUID；创建沙箱时的 `--mount2` 使用 Volume 名称。扩容只支持增大容量。
 
+#### 文件操作
+
+通过 `vol v2 fs` 直接操作 Volume 中的文件，使用 Volume UUID 和相对于 Volume 根目录的路径（`/` 表示根目录）：
+
+```bash
+# 创建目录
+ucloud-sandbox-cli vol v2 fs mkdir <volume-id> /directory
+
+# 上传本地文件，或从 stdin 读取（支持二进制数据）
+ucloud-sandbox-cli vol v2 fs upload <volume-id> /data.txt -f ./data.txt
+printf 'hello\n' | ucloud-sandbox-cli vol v2 fs upload <volume-id> /hello.txt
+
+# 下载到本地文件，或直接输出到 stdout
+ucloud-sandbox-cli vol v2 fs download <volume-id> /data.txt -f ./data.txt
+ucloud-sandbox-cli vol v2 fs download <volume-id> /data.txt > ./data.txt
+
+# 列出目录、查看元数据、删除文件或目录
+ucloud-sandbox-cli vol v2 fs list <volume-id> /
+ucloud-sandbox-cli vol v2 fs ls <volume-id> /
+ucloud-sandbox-cli vol v2 fs stat <volume-id> /data.txt
+ucloud-sandbox-cli vol v2 fs rm <volume-id> /data.txt
+ucloud-sandbox-cli vol v2 fs remove <volume-id> /directory
+```
+
+`upload`、`download` 的 `-f`（`--file`）指定本地文件；不指定时分别使用 stdin、stdout，传输过程不向 stdout 输出提示信息。上传使用服务端默认创建规则：父目录必须存在，目标文件不能已存在。下载到本地文件时会覆盖已有内容。
+
+`list`（别名 `ls`）按名称排序，以类似 `ls -l` 的格式显示权限、UID、GID、字节数、修改时间和名称；符号链接同时显示目标。`stat` 以 JSON 显示元数据。`remove`（别名 `rm`）递归删除目录及其内容。
+
+`mkdir` 创建目录，父目录必须存在，目标路径不能已存在。
+
 #### 挂载 Volume v2
 
 挂载 Volume v2 需要沙箱内的 **envd 0.9.0 或更高版本**。请先升级沙箱模板中的 envd，再使用升级后的模板创建沙箱。
@@ -565,7 +595,7 @@ ucloud-sandbox-cli tpl delete --select
 
 ## 输出格式与分页
 
-所有列表类命令（`sandbox list`、`volume list`、`volume v2 list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`）都支持同一组参数：
+以下列表命令支持同一组参数：`sandbox list`、`volume list`、`volume v2 list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`。
 
 ```bash
 -f, --format string   输出格式，pretty 或 json（默认 pretty）
