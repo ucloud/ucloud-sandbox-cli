@@ -46,12 +46,20 @@ make test
 ## 项目结构
 
 ### `cmd/`
-所有CLI命令的实现都放在此目录。每个命令通过 `New<CommandName>Cmd()` 函数返回 `*cobra.Command`。
+所有CLI命令的实现都放在此目录，每个命令组一个子包（如 `cmd/sandbox/`、`cmd/auth/`）。
+
+**命令组：** 子包导出 `Command() *cobra.Command`，返回命令组并注册其下的子命令；顶层命令组在 `main.go` 中注册。
+
+**子命令：** 每个子命令是一个实现了 `cmd.Operation` 接口的 `<name>Operation` 结构体（未导出），flag 绑定到结构体字段：
+- `Command() *cobra.Command`：定义 `Use`、`Short`、`Args` 和 flags
+- `Run(ctx cmd.OperationContext) error`：执行命令，通过 `ctx.Client` 调用 SDK
+
+注册时用 `cmd.Build(&xxxOperation{})` 包装，它会加载配置并创建 SDK client；只读写本地配置、不需要 client 的命令（如 `login`、`update`）用 `cmd.BuildLocal`。
 
 **新增命令时需要：**
-1. 参考现有命令的实现方式（如 `login.go`、`logout.go`、`region.go`）
+1. 参考现有命令的实现方式（如 `cmd/sandbox/kill.go`、`cmd/auth/region.go`）
 2. 遵循相同的代码风格和错误处理模式
-3. 命令函数命名规范：`New<CommandName>Cmd()`
+3. 命名规范：命令组为 `Command()`，子命令为 `<name>Operation`
 
 ### `internal/`
 存放CLI使用的公用包
