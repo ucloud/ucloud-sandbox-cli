@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	defaultDomain  = "cn-wlcb.sandbox.ucloudai.com"
+	defaultRegion  = "cn-wlcb"
+	defaultDomain  = defaultRegion + ".sandbox.ucloudai.com"
 	domainTemplate = "%s.sandbox.ucloudai.com"
 	configDir      = ".ucloud-sandbox-cli"
 	configFile     = "config.json"
@@ -159,6 +160,15 @@ func resolveDomain(cfg *Config) string {
 		return fmt.Sprintf(domainTemplate, cfg.Region)
 	}
 	return defaultDomain
+}
+
+// ResolveRegion returns the configured region, or the default one when none
+// is set.
+func ResolveRegion(cfg *Config) string {
+	if cfg.Region != "" {
+		return cfg.Region
+	}
+	return defaultRegion
 }
 
 // NewClient validates the config and creates a sandbox client. Each modifier

@@ -53,8 +53,8 @@ type ErrorCount struct {
 	Count   int
 }
 
-// Throughput returns the number of successful iterations per second.
-func (r Report) Throughput() float64 {
+// Rate returns the number of successful iterations per second.
+func (r Report) Rate() float64 {
 	if r.Elapsed <= 0 {
 		return 0
 	}

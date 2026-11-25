@@ -24,8 +24,8 @@ type runView struct {
 	Failed      int  `json:"failed"`
 	Interrupted bool `json:"interrupted"`
 
-	ElapsedMs  float64 `json:"elapsed_ms"`
-	Throughput float64 `json:"throughput_per_sec"`
+	ElapsedMs float64 `json:"elapsed_ms"`
+	Rate      float64 `json:"rate_per_sec"`
 
 	Phases []phaseView `json:"phases"`
 	Errors []errorView `json:"errors"`
@@ -34,6 +34,9 @@ type runView struct {
 	// LeftRunning counts the sandboxes the run left running on purpose, to be
 	// reclaimed by their timeout.
 	LeftRunning int `json:"left_running"`
+
+	// hideBreakdown leaves the connect/service rows out of the pretty table.
+	hideBreakdown bool
 }
 
 // phaseView is the statistics of one phase. Its latencies cover the whole
@@ -86,7 +89,7 @@ func newRunView(runID, template string, concurrency int, timeoutSec int32, r ben
 		Failed:            r.Failed,
 		Interrupted:       r.Interrupted,
 		ElapsedMs:         ms(r.Elapsed),
-		Throughput:        r.Throughput(),
+		Rate:              r.Rate(),
 		Phases:            make([]phaseView, 0, len(r.Phases)),
 		Errors:            make([]errorView, 0, len(r.Errors)),
 		Leaked:            append([]string{}, r.Leaked...),
@@ -153,7 +156,7 @@ func (v runView) writePretty(w io.Writer) error {
 	fmt.Fprintf(w, "Benchmark %s %s: template %s, concurrency %d\n", v.RunID, status, v.Template, v.Concurrency)
 	fmt.Fprintf(w, "Iterations: %d/%d started, %d succeeded, %d failed\n", v.Started, v.Requested, v.Succeeded, v.Failed)
 	fmt.Fprintf(w, "Elapsed: %s, rate: %s sandbox/s\n\n",
-		formatMs(v.ElapsedMs), strconv.FormatFloat(v.Throughput, 'f', 2, 64))
+		formatMs(v.ElapsedMs), strconv.FormatFloat(v.Rate, 'f', 2, 64))
 
 	// Every phase is followed by its breakdown: the time spent obtaining HTTP
 	// connections (DNS, dial, TLS), and the rest, spent on the service.
@@ -162,6 +165,10 @@ func (v runView) writePretty(w io.Writer) error {
 		row := phaseRow{Phase: p.Phase, Succeeded: strconv.Itoa(p.Succeeded), Failed: strconv.Itoa(p.Failed)}
 		if p.Succeeded == 0 {
 			rows = append(rows, row)
+			continue
+		}
+		if v.hideBreakdown {
+			rows = append(rows, row.withLatency(p.latencyView))
 			continue
 		}
 		rows = append(rows,

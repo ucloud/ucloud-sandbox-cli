@@ -3,6 +3,7 @@ package benchmark
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
 	"os/signal"
@@ -38,11 +39,12 @@ type runOptions struct {
 	format      string
 }
 
-// addFlags registers the shared flags on c. timeoutUsage describes what the
-// sandbox timeout means for the command.
-func (o *runOptions) addFlags(c *cobra.Command, timeoutUsage string) {
+// addFlags registers the shared flags on c. defaultCount is the number of
+// iterations run when --count is not given, and timeoutUsage describes what
+// the sandbox timeout means for the command.
+func (o *runOptions) addFlags(c *cobra.Command, defaultCount int, timeoutUsage string) {
 	c.Flags().StringVarP(&o.template, "template", "t", "system/base", "Template ID or alias to create sandboxes from")
-	c.Flags().IntVarP(&o.count, "count", "n", 10, "Total number of iterations")
+	c.Flags().IntVarP(&o.count, "count", "n", defaultCount, "Total number of iterations")
 	c.Flags().IntVarP(&o.concurrency, "concurrency", "c", 1, "Number of iterations in flight at once")
 	c.Flags().Int32VarP(&o.timeout, "timeout", "", 300, timeoutUsage)
 	c.Flags().StringVarP(&o.format, "format", "f", list.FormatPretty, "Output format (pretty, json)")
@@ -66,20 +68,30 @@ func (o *runOptions) validate() error {
 	return nil
 }
 
-// execOptions describe the command an iteration runs in its sandbox.
-type execOptions struct {
-	command string
-	user    string
+// runSpec describes what a benchmark command times on every sandbox.
+type runSpec struct {
+	// name labels the run in its progress output.
+	name string
+
+	// steps run on every sandbox between create and kill.
+	steps []benchmark.Step[*benchSandbox]
+
+	// skipKill leaves the sandboxes running until their timeout.
+	skipKill bool
+
+	// hideBreakdown leaves out the connect/service rows under every phase,
+	// for runs about whether things work rather than how fast.
+	hideBreakdown bool
 }
 
-// run executes a benchmark named name and writes its report. phases selects
-// which phases are timed; exec is only used when the exec phase is.
-func (o *runOptions) run(ctx cmd.OperationContext, name string, exec execOptions, phases benchmark.LifecycleOptions) error {
-	sdk, err := config.NewClient(ctx.Config, withoutRetries)
-	if err != nil {
-		return err
-	}
+// newClient returns the SDK client benchmarks run on: the configured one,
+// with the retry of rate-limited requests turned off.
+func newClient(cfg *config.Config) (*client.Client, error) {
+	return config.NewClient(cfg, withoutRetries)
+}
 
+// run executes a benchmark and writes its report.
+func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runSpec) error {
 	runID := newRunID(time.Now())
 	cleanup := cleanupCommand(runID)
 
@@ -101,30 +113,30 @@ func (o *runOptions) run(ctx cmd.OperationContext, name string, exec execOptions
 		}
 	}()
 
-	fmt.Fprintf(os.Stderr, "Running %s benchmark %s: template %s, %d iteration(s), concurrency %d\n",
-		name, runID, o.template, o.count, o.concurrency)
-	// Said up front, so a run that is killed outright still leaves a way to
-	// find its sandboxes.
-	fmt.Fprintf(os.Stderr, "Sandboxes are tagged %s=%s; clean them up with: %s\n", runIDMetadataKey, runID, cleanup)
+	o.writeHeader(os.Stderr, spec.name, runID)
 
 	showProgress := term.IsTerminal(int(os.Stderr.Fd()))
 
-	opts := phases
-	opts.Count = o.count
-	opts.Concurrency = o.concurrency
-	opts.OnIteration = func(p benchmark.Progress) {
-		if showProgress {
-			fmt.Fprintf(os.Stderr, "\r[%d/%d] succeeded %d, failed %d", p.Done, p.Total, p.Succeeded, p.Failed)
-		}
+	opts := benchmark.Options[*benchSandbox]{
+		Count:       o.count,
+		Concurrency: o.concurrency,
+		Steps:       spec.steps,
+		SkipKill:    spec.skipKill,
+		OnIteration: func(p benchmark.Progress) {
+			if showProgress {
+				fmt.Fprintf(os.Stderr, "\r[%d/%d] succeeded %d, failed %d", p.Done, p.Total, p.Succeeded, p.Failed)
+			}
+		},
 	}
 
-	report := benchmark.RunLifecycle(runCtx, newCreator(sdk.Sandboxes(), runID, o.template, o.timeout, exec), opts)
+	report := benchmark.Run(runCtx, newCreator(sdk.Sandboxes(), runID, o.template, o.timeout), opts)
 	if showProgress && report.Started > 0 {
 		fmt.Fprintln(os.Stderr)
 	}
 
 	view := newRunView(runID, o.template, o.concurrency, o.timeout, report)
-	if phases.SkipKill && len(report.Phases) > 0 {
+	view.hideBreakdown = spec.hideBreakdown
+	if spec.skipKill && len(report.Phases) > 0 {
 		view.LeftRunning = report.Phases[0].Stats.Count
 	}
 
@@ -137,6 +149,17 @@ func (o *runOptions) run(ctx cmd.OperationContext, name string, exec execOptions
 	}
 
 	return exitError(report)
+}
+
+// writeHeader describes the run about to start. The cleanup command is given
+// up front, so a run that is killed outright still leaves a way to find its
+// sandboxes.
+func (o *runOptions) writeHeader(w io.Writer, name, runID string) {
+	fmt.Fprintf(w, "Running %s benchmark %s\n", name, runID)
+	fmt.Fprintf(w, "  Template:     %s\n", o.template)
+	fmt.Fprintf(w, "  Iterations:   %d (concurrency %d)\n", o.count, o.concurrency)
+	fmt.Fprintf(w, "  Sandbox tag:  %s=%s\n", runIDMetadataKey, runID)
+	fmt.Fprintf(w, "  Cleanup:      %s\n\n", cleanupCommand(runID))
 }
 
 // exitError turns a report into the command's error, so scripts can tell a
@@ -173,44 +196,52 @@ func withoutRetries(opts *client.Options) {
 }
 
 // newCreator returns the CreateFunc that starts the sandboxes of a run.
-func newCreator(svc *sandbox.Service, runID, template string, timeout int32, exec execOptions) benchmark.CreateFunc {
-	return func(ctx context.Context) (benchmark.Instance, error) {
+func newCreator(svc *sandbox.Service, runID, template string, timeout int32) benchmark.CreateFunc[*benchSandbox] {
+	return func(ctx context.Context) (*benchSandbox, error) {
 		req := api.NewSandbox{
 			TemplateID: template,
 			Timeout:    &timeout,
 			Metadata:   &api.SandboxMetadata{runIDMetadataKey: runID},
 		}
 
-		sbx, err := svc.Create(ctx, req, manageBy)
+		created, err := svc.Create(ctx, req, manageBy)
 		if err != nil {
 			return nil, err
 		}
 
-		return &sdkInstance{sbx: sbx, exec: exec}, nil
+		return &benchSandbox{Sandbox: created, svc: svc, timeout: timeout}, nil
 	}
 }
 
-// sdkInstance adapts an SDK sandbox to benchmark.Instance.
-type sdkInstance struct {
-	sbx  *sandbox.Sandbox
-	exec execOptions
+// benchSandbox is the sandbox one iteration works on. It embeds the SDK
+// sandbox, so the steps use its files, commands and fields directly.
+type benchSandbox struct {
+	*sandbox.Sandbox
+
+	// svc and timeout let the resume step connect to the sandbox again.
+	svc     *sandbox.Service
+	timeout int32
+
+	// paused records that the pause step succeeded, so the resume step can
+	// tell a resume from a connect to a sandbox that never paused.
+	paused bool
 }
 
-func (i *sdkInstance) ID() string {
-	return i.sbx.SandboxID
+func (sbx *benchSandbox) ID() string {
+	return sbx.SandboxID
 }
 
-func (i *sdkInstance) Exec(ctx context.Context) error {
-	// Run reports a non-zero exit as an error, which counts as a failed exec.
-	_, err := i.sbx.Commands().User(i.exec.user).Run(ctx, i.exec.command, commands.Options{})
-	return err
+// run runs command in the sandbox as user. A non-zero exit is an error.
+func (sbx *benchSandbox) run(ctx context.Context, command, user string) (*commands.Result, error) {
+	return sbx.Commands().User(user).Run(ctx, command, commands.Options{})
 }
 
-// Kill relies on the SDK's contract for Sandbox.Kill: (false, nil) is returned
-// only when DELETE /sandboxes/{id} answers 404, and every other failure comes
-// back as an error. That is what lets !killed be reported as not found.
-func (i *sdkInstance) Kill(ctx context.Context) error {
-	killed, err := i.sbx.Kill(ctx)
+// Kill shadows the SDK's Sandbox.Kill to fit benchmark.Sandbox. It relies on
+// the SDK's contract: (false, nil) is returned only when DELETE
+// /sandboxes/{id} answers 404, and every other failure comes back as an
+// error. That is what lets !killed be reported as not found.
+func (sbx *benchSandbox) Kill(ctx context.Context) error {
+	killed, err := sbx.Sandbox.Kill(ctx)
 	if err != nil {
 		return err
 	}
@@ -218,4 +249,15 @@ func (i *sdkInstance) Kill(ctx context.Context) error {
 		return benchmark.ErrSandboxNotFound
 	}
 	return nil
+}
+
+// execStep runs command in the sandbox; a non-zero exit fails it.
+func execStep(command, user string) benchmark.Step[*benchSandbox] {
+	return benchmark.Step[*benchSandbox]{
+		Phase: benchmark.PhaseExec,
+		Run: func(ctx context.Context, sbx *benchSandbox) error {
+			_, err := sbx.run(ctx, command, user)
+			return err
+		},
+	}
 }

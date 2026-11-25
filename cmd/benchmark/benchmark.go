@@ -13,6 +13,7 @@ func Command() *cobra.Command {
 		Short:   "Benchmark the sandbox service",
 	}
 	c.AddCommand(cmd.Build(&createOperation{}))
+	c.AddCommand(cmd.Build(&healthOperation{}))
 	c.AddCommand(cmd.Build(&lifecycleOperation{}))
 	return c
 }

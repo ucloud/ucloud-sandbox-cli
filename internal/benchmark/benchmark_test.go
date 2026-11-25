@@ -55,8 +55,8 @@ func TestSummarizeSmallSetPercentiles(t *testing.T) {
 	assert.Equal(t, time.Duration(3), s.P99)
 }
 
-// fakeInstance is an Instance whose phases fail as configured.
-type fakeInstance struct {
+// fakeSandbox is a Sandbox whose phases fail as configured.
+type fakeSandbox struct {
 	id      string
 	execErr error
 	killErr error
@@ -65,43 +65,57 @@ type fakeInstance struct {
 	killCalls atomic.Int32
 }
 
-func (f *fakeInstance) ID() string { return f.id }
+func (f *fakeSandbox) ID() string { return f.id }
 
-func (f *fakeInstance) Exec(context.Context) error {
+func (f *fakeSandbox) Exec(context.Context) error {
 	f.execCalls.Add(1)
 	return f.execErr
 }
 
-func (f *fakeInstance) Kill(context.Context) error {
+func (f *fakeSandbox) Kill(context.Context) error {
 	f.killCalls.Add(1)
 	return f.killErr
 }
 
-// fakeService hands out fakeInstances and records them.
+// fakeService hands out fakeSandboxs and records them.
 type fakeService struct {
 	mu        sync.Mutex
-	instances []*fakeInstance
+	sandboxes []*fakeSandbox
 	created   atomic.Int32
 
 	// configure, when set, decides the behavior of the n-th (0-based) create.
-	configure func(n int, inst *fakeInstance) error
+	configure func(n int, sbx *fakeSandbox) error
 }
 
-func (s *fakeService) create(context.Context) (Instance, error) {
+func (s *fakeService) create(context.Context) (*fakeSandbox, error) {
 	n := int(s.created.Add(1)) - 1
-	inst := &fakeInstance{id: fmt.Sprintf("sbx-%03d", n)}
+	sbx := &fakeSandbox{id: fmt.Sprintf("sbx-%03d", n)}
 
 	if s.configure != nil {
-		if err := s.configure(n, inst); err != nil {
+		if err := s.configure(n, sbx); err != nil {
 			return nil, err
 		}
 	}
 
 	s.mu.Lock()
-	s.instances = append(s.instances, inst)
+	s.sandboxes = append(s.sandboxes, sbx)
 	s.mu.Unlock()
 
-	return inst, nil
+	return sbx, nil
+}
+
+// execer is a sandbox with an exec phase of its own.
+type execer interface {
+	Sandbox
+	Exec(ctx context.Context) error
+}
+
+// execSteps returns the single exec step of a lifecycle run.
+func execSteps[S execer]() []Step[S] {
+	return []Step[S]{{
+		Phase: PhaseExec,
+		Run:   func(ctx context.Context, sbx S) error { return sbx.Exec(ctx) },
+	}}
 }
 
 func phaseReport(t *testing.T, r Report, phase Phase) PhaseReport {
@@ -115,11 +129,12 @@ func phaseReport(t *testing.T, r Report, phase Phase) PhaseReport {
 	return PhaseReport{}
 }
 
-func TestRunLifecycleAllSucceed(t *testing.T) {
+func TestRunAllSucceed(t *testing.T) {
 	svc := &fakeService{}
 
 	var calls []Progress
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Steps:       execSteps[*fakeSandbox](),
 		Count:       20,
 		Concurrency: 4,
 		OnIteration: func(p Progress) { calls = append(calls, p) },
@@ -141,22 +156,21 @@ func TestRunLifecycleAllSucceed(t *testing.T) {
 	}
 	assert.Equal(t, []Phase{PhaseCreate, PhaseExec, PhaseKill, PhaseTotal}, phases)
 
-	for _, inst := range svc.instances {
-		assert.EqualValues(t, 1, inst.execCalls.Load())
-		assert.EqualValues(t, 1, inst.killCalls.Load())
+	for _, sbx := range svc.sandboxes {
+		assert.EqualValues(t, 1, sbx.execCalls.Load())
+		assert.EqualValues(t, 1, sbx.killCalls.Load())
 	}
 
 	require.Len(t, calls, 20)
 	assert.Equal(t, Progress{Done: 20, Total: 20, Succeeded: 20}, calls[19])
 }
 
-func TestRunLifecycleSkipExec(t *testing.T) {
+func TestRunSkipExec(t *testing.T) {
 	svc := &fakeService{}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
 		Count:       3,
 		Concurrency: 1,
-		SkipExec:    true,
 	})
 
 	var phases []Phase
@@ -165,30 +179,31 @@ func TestRunLifecycleSkipExec(t *testing.T) {
 	}
 	assert.Equal(t, []Phase{PhaseCreate, PhaseKill, PhaseTotal}, phases)
 
-	for _, inst := range svc.instances {
-		assert.EqualValues(t, 0, inst.execCalls.Load())
-		assert.EqualValues(t, 1, inst.killCalls.Load())
+	for _, sbx := range svc.sandboxes {
+		assert.EqualValues(t, 0, sbx.execCalls.Load())
+		assert.EqualValues(t, 1, sbx.killCalls.Load())
 	}
 }
 
-func TestRunLifecycleFailures(t *testing.T) {
+func TestRunFailures(t *testing.T) {
 	svc := &fakeService{
-		configure: func(n int, inst *fakeInstance) error {
+		configure: func(n int, sbx *fakeSandbox) error {
 			switch n % 5 {
 			case 1:
 				return errors.New("quota exceeded")
 			case 2:
-				inst.execErr = errors.New("exit status 1")
+				sbx.execErr = errors.New("exit status 1")
 			case 3:
-				inst.killErr = errors.New("kill timeout")
+				sbx.killErr = errors.New("kill timeout")
 			case 4:
-				inst.killErr = fmt.Errorf("wrapped: %w", ErrSandboxNotFound)
+				sbx.killErr = fmt.Errorf("wrapped: %w", ErrSandboxNotFound)
 			}
 			return nil
 		},
 	}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Steps:       execSteps[*fakeSandbox](),
 		Count:       10,
 		Concurrency: 1,
 	})
@@ -214,8 +229,8 @@ func TestRunLifecycleFailures(t *testing.T) {
 	assert.Equal(t, 8, total.Failed)
 
 	// A failed exec still kills the sandbox.
-	for _, inst := range svc.instances {
-		assert.EqualValues(t, 1, inst.killCalls.Load(), inst.id)
+	for _, sbx := range svc.sandboxes {
+		assert.EqualValues(t, 1, sbx.killCalls.Load(), sbx.id)
 	}
 
 	// Only the sandbox whose kill failed outright is leaked; one that is
@@ -230,9 +245,9 @@ func TestRunLifecycleFailures(t *testing.T) {
 	}, report.Errors)
 }
 
-func TestRunLifecycleErrorsSortedByCount(t *testing.T) {
+func TestRunErrorsSortedByCount(t *testing.T) {
 	svc := &fakeService{
-		configure: func(n int, _ *fakeInstance) error {
+		configure: func(n int, _ *fakeSandbox) error {
 			if n == 0 {
 				return errors.New("rare")
 			}
@@ -240,17 +255,17 @@ func TestRunLifecycleErrorsSortedByCount(t *testing.T) {
 		},
 	}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{Count: 4, Concurrency: 1})
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{Steps: execSteps[*fakeSandbox](), Count: 4, Concurrency: 1})
 
 	require.Len(t, report.Errors, 2)
 	assert.Equal(t, ErrorCount{Phase: PhaseCreate, Message: "common", Count: 3}, report.Errors[0])
 	assert.Equal(t, ErrorCount{Phase: PhaseCreate, Message: "rare", Count: 1}, report.Errors[1])
 }
 
-func TestRunLifecycleRespectsConcurrency(t *testing.T) {
+func TestRunRespectsConcurrency(t *testing.T) {
 	var inFlight, peak atomic.Int32
 
-	create := func(context.Context) (Instance, error) {
+	create := func(context.Context) (*fakeSandbox, error) {
 		n := inFlight.Add(1)
 		for {
 			p := peak.Load()
@@ -260,30 +275,30 @@ func TestRunLifecycleRespectsConcurrency(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 		inFlight.Add(-1)
-		return &fakeInstance{id: "sbx"}, nil
+		return &fakeSandbox{id: "sbx"}, nil
 	}
 
-	report := RunLifecycle(context.Background(), create, LifecycleOptions{Count: 30, Concurrency: 3})
+	report := Run(context.Background(), create, Options[*fakeSandbox]{Steps: execSteps[*fakeSandbox](), Count: 30, Concurrency: 3})
 
 	assert.Equal(t, 30, report.Succeeded)
 	assert.LessOrEqual(t, peak.Load(), int32(3))
 	assert.Greater(t, peak.Load(), int32(1), "iterations run concurrently")
 }
 
-func TestRunLifecycleCancelStopsNewIterationsAndCleansUp(t *testing.T) {
+func TestRunCancelStopsNewIterationsAndCleansUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	svc := &fakeService{}
 	release := make(chan struct{})
 
-	create := func(c context.Context) (Instance, error) {
-		inst, err := svc.create(c)
+	create := func(c context.Context) (*fakeSandbox, error) {
+		sbx, err := svc.create(c)
 		if svc.created.Load() == 2 {
 			// The second iteration is in flight when the run is cancelled.
 			cancel()
 			<-release
 		}
-		return inst, err
+		return sbx, err
 	}
 
 	go func() {
@@ -291,30 +306,30 @@ func TestRunLifecycleCancelStopsNewIterationsAndCleansUp(t *testing.T) {
 		close(release)
 	}()
 
-	report := RunLifecycle(ctx, create, LifecycleOptions{Count: 100, Concurrency: 1})
+	report := Run(ctx, create, Options[*fakeSandbox]{Steps: execSteps[*fakeSandbox](), Count: 100, Concurrency: 1})
 
 	assert.True(t, report.Interrupted)
 	assert.Equal(t, 100, report.Requested)
 	assert.Equal(t, 2, report.Started)
 	assert.Equal(t, 2, report.Succeeded, "the in-flight iteration completes on a detached context")
 
-	for _, inst := range svc.instances {
-		assert.EqualValues(t, 1, inst.killCalls.Load(), inst.id)
+	for _, sbx := range svc.sandboxes {
+		assert.EqualValues(t, 1, sbx.killCalls.Load(), sbx.id)
 	}
 }
 
-func TestRunLifecycleZeroCount(t *testing.T) {
+func TestRunZeroCount(t *testing.T) {
 	svc := &fakeService{}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{Count: 0, Concurrency: 5})
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{Count: 0, Concurrency: 5})
 
 	assert.Equal(t, 0, report.Started)
 	assert.EqualValues(t, 0, svc.created.Load())
 }
 
-func TestReportThroughput(t *testing.T) {
-	assert.InDelta(t, 2.5, Report{Succeeded: 5, Elapsed: 2 * time.Second}.Throughput(), 1e-9)
-	assert.Zero(t, Report{Succeeded: 5}.Throughput())
+func TestReportRate(t *testing.T) {
+	assert.InDelta(t, 2.5, Report{Succeeded: 5, Elapsed: 2 * time.Second}.Rate(), 1e-9)
+	assert.Zero(t, Report{Succeeded: 5}.Rate())
 }
 
 // simulateConnect fires the httptrace hooks of ctx as an HTTP request taking d
@@ -346,31 +361,33 @@ func TestConnTraceIgnoresUnpairedGotConn(t *testing.T) {
 	assert.Zero(t, trace.Total())
 }
 
-// connectingInstance spends connect obtaining a connection, then work
+// connectingSandbox spends connect obtaining a connection, then work
 // responding, in every phase.
-type connectingInstance struct {
+type connectingSandbox struct {
 	connect, work time.Duration
 }
 
-func (i connectingInstance) phase(ctx context.Context) error {
+func (i connectingSandbox) phase(ctx context.Context) error {
 	simulateConnect(ctx, i.connect)
 	time.Sleep(i.work)
 	return nil
 }
 
-func (i connectingInstance) ID() string                     { return "sbx" }
-func (i connectingInstance) Exec(ctx context.Context) error { return i.phase(ctx) }
-func (i connectingInstance) Kill(ctx context.Context) error { return i.phase(ctx) }
+func (i connectingSandbox) ID() string                     { return "sbx" }
+func (i connectingSandbox) Exec(ctx context.Context) error { return i.phase(ctx) }
+func (i connectingSandbox) Kill(ctx context.Context) error { return i.phase(ctx) }
 
-func TestRunLifecycleSplitsConnectFromService(t *testing.T) {
+func TestRunSplitsConnectFromService(t *testing.T) {
 	const connect, work = 20 * time.Millisecond, 10 * time.Millisecond
-	inst := connectingInstance{connect: connect, work: work}
+	sbx := connectingSandbox{connect: connect, work: work}
 
-	create := func(ctx context.Context) (Instance, error) {
-		return inst, inst.phase(ctx)
+	create := func(ctx context.Context) (connectingSandbox, error) {
+		return sbx, sbx.phase(ctx)
 	}
 
-	report := RunLifecycle(context.Background(), create, LifecycleOptions{Count: 2, Concurrency: 1})
+	report := Run(context.Background(), create, Options[connectingSandbox]{
+		Steps: execSteps[connectingSandbox](), Count: 2, Concurrency: 1,
+	})
 	require.Equal(t, 2, report.Succeeded)
 
 	for _, phase := range []Phase{PhaseCreate, PhaseExec, PhaseKill} {
@@ -386,15 +403,15 @@ func TestRunLifecycleSplitsConnectFromService(t *testing.T) {
 	assert.GreaterOrEqual(t, total.Service.Min, 3*work)
 }
 
-func TestRunLifecycleFailedPhaseRecordsNoConnect(t *testing.T) {
+func TestRunFailedPhaseRecordsNoConnect(t *testing.T) {
 	svc := &fakeService{
-		configure: func(_ int, inst *fakeInstance) error {
-			inst.execErr = errors.New("boom")
+		configure: func(_ int, sbx *fakeSandbox) error {
+			sbx.execErr = errors.New("boom")
 			return nil
 		},
 	}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{Count: 1, Concurrency: 1})
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{Steps: execSteps[*fakeSandbox](), Count: 1, Concurrency: 1})
 
 	exec := phaseReport(t, report, PhaseExec)
 	assert.Zero(t, exec.Connect.Count)
@@ -402,9 +419,9 @@ func TestRunLifecycleFailedPhaseRecordsNoConnect(t *testing.T) {
 	assert.Equal(t, 1, phaseReport(t, report, PhaseCreate).Connect.Count)
 }
 
-func TestRunLifecycleCreateOnly(t *testing.T) {
+func TestRunCreateOnly(t *testing.T) {
 	svc := &fakeService{
-		configure: func(n int, _ *fakeInstance) error {
+		configure: func(n int, _ *fakeSandbox) error {
 			if n == 0 {
 				return errors.New("quota exceeded")
 			}
@@ -412,10 +429,9 @@ func TestRunLifecycleCreateOnly(t *testing.T) {
 		},
 	}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
 		Count:       4,
 		Concurrency: 2,
-		SkipExec:    true,
 		SkipKill:    true,
 	})
 
@@ -429,18 +445,24 @@ func TestRunLifecycleCreateOnly(t *testing.T) {
 	assert.Equal(t, 1, report.Failed)
 	assert.Empty(t, report.Leaked, "sandboxes left running on purpose are not leaks")
 
-	require.Len(t, svc.instances, 3)
-	for _, inst := range svc.instances {
-		assert.EqualValues(t, 0, inst.execCalls.Load(), inst.id)
-		assert.EqualValues(t, 0, inst.killCalls.Load(), inst.id)
+	require.Len(t, svc.sandboxes, 3)
+	for _, sbx := range svc.sandboxes {
+		assert.EqualValues(t, 0, sbx.execCalls.Load(), sbx.id)
+		assert.EqualValues(t, 0, sbx.killCalls.Load(), sbx.id)
 	}
 }
 
-func TestLifecycleOptionsPhases(t *testing.T) {
-	assert.Equal(t, []Phase{PhaseCreate, PhaseExec, PhaseKill, PhaseTotal}, LifecycleOptions{}.phases())
-	assert.Equal(t, []Phase{PhaseCreate, PhaseKill, PhaseTotal}, LifecycleOptions{SkipExec: true}.phases())
-	assert.Equal(t, []Phase{PhaseCreate, PhaseExec, PhaseTotal}, LifecycleOptions{SkipKill: true}.phases())
-	assert.Equal(t, []Phase{PhaseCreate}, LifecycleOptions{SkipExec: true, SkipKill: true}.phases())
+func TestOptionsPhases(t *testing.T) {
+	exec := execSteps[*fakeSandbox]()
+	type opts = Options[*fakeSandbox]
+
+	assert.Equal(t, []Phase{PhaseCreate, PhaseExec, PhaseKill, PhaseTotal}, opts{Steps: exec}.phases())
+	assert.Equal(t, []Phase{PhaseCreate, PhaseKill, PhaseTotal}, opts{}.phases())
+	assert.Equal(t, []Phase{PhaseCreate, PhaseExec, PhaseTotal}, opts{Steps: exec, SkipKill: true}.phases())
+	assert.Equal(t, []Phase{PhaseCreate}, opts{SkipKill: true}.phases())
+
+	steps := []Step[*fakeSandbox]{{Phase: "a"}, {Phase: "b"}}
+	assert.Equal(t, []Phase{PhaseCreate, "a", "b", PhaseKill, PhaseTotal}, opts{Steps: steps}.phases())
 }
 
 func TestNormalizeMessage(t *testing.T) {
@@ -455,17 +477,17 @@ func TestNormalizeMessage(t *testing.T) {
 		normalizeMessage(`Post "https://49983-ibx7k2.example.com/process.Process/Start": dial tcp: i/o timeout`, "ibx7k2"))
 }
 
-func TestRunLifecycleGroupsErrorsAcrossSandboxes(t *testing.T) {
+func TestRunGroupsErrorsAcrossSandboxes(t *testing.T) {
 	svc := &fakeService{
-		configure: func(n int, inst *fakeInstance) error {
+		configure: func(n int, sbx *fakeSandbox) error {
 			// Every exec fails with a message naming its own sandbox and
 			// spanning several lines.
-			inst.execErr = fmt.Errorf("dial https://49983-%s.example.com: refused\nretry later\n", inst.id)
+			sbx.execErr = fmt.Errorf("dial https://49983-%s.example.com: refused\nretry later\n", sbx.id)
 			return nil
 		},
 	}
 
-	report := RunLifecycle(context.Background(), svc.create, LifecycleOptions{Count: 5, Concurrency: 2})
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{Steps: execSteps[*fakeSandbox](), Count: 5, Concurrency: 2})
 
 	require.Len(t, report.Errors, 1)
 	assert.Equal(t, ErrorCount{
@@ -473,4 +495,32 @@ func TestRunLifecycleGroupsErrorsAcrossSandboxes(t *testing.T) {
 		Message: "dial https://49983-<sandbox>.example.com: refused retry later",
 		Count:   5,
 	}, report.Errors[0])
+}
+
+func TestRunStepsRunInOrderPastFailures(t *testing.T) {
+	var mu sync.Mutex
+	var order []Phase
+	step := func(phase Phase, err error) Step[*fakeSandbox] {
+		return Step[*fakeSandbox]{Phase: phase, Run: func(context.Context, *fakeSandbox) error {
+			mu.Lock()
+			order = append(order, phase)
+			mu.Unlock()
+			return err
+		}}
+	}
+
+	svc := &fakeService{}
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Count:       1,
+		Concurrency: 1,
+		Steps: []Step[*fakeSandbox]{
+			step("internet", errors.New("could not resolve host")),
+			step("filesystem", nil),
+		},
+	})
+
+	assert.Equal(t, []Phase{"internet", "filesystem"}, order, "a failed step does not stop the next")
+	assert.Equal(t, 1, phaseReport(t, report, "internet").Failed)
+	assert.Equal(t, 1, phaseReport(t, report, "filesystem").Stats.Count)
+	assert.EqualValues(t, 1, svc.sandboxes[0].killCalls.Load())
 }

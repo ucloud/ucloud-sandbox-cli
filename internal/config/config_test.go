@@ -239,3 +239,8 @@ func TestNewClient_AppliesModifiers(t *testing.T) {
 	assert.Equal(t, "test-key", seen.APIKey, "modifiers see the options filled in from the config")
 	assert.Equal(t, "example.com", seen.Domain, "modifiers run in order")
 }
+
+func TestResolveRegion(t *testing.T) {
+	assert.Equal(t, "cn-wlcb", ResolveRegion(&Config{}), "default region")
+	assert.Equal(t, "us-ca", ResolveRegion(&Config{Region: "us-ca"}))
+}

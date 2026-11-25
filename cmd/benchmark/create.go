@@ -3,7 +3,6 @@ package benchmark
 import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
-	"github.com/ucloud/ucloud-sandbox-cli/internal/benchmark"
 )
 
 // createOperation times sandbox creation alone. The sandboxes are not killed:
@@ -20,7 +19,7 @@ func (o *createOperation) Command() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 
-	o.addFlags(c, "Seconds each sandbox lives for before it is reclaimed; sandboxes are not killed")
+	o.addFlags(c, 10, "Seconds each sandbox lives for before it is reclaimed; sandboxes are not killed")
 
 	return c
 }
@@ -29,5 +28,9 @@ func (o *createOperation) Run(ctx cmd.OperationContext) error {
 	if err := o.validate(); err != nil {
 		return err
 	}
-	return o.run(ctx, "create", execOptions{}, benchmark.LifecycleOptions{SkipExec: true, SkipKill: true})
+	sdk, err := newClient(ctx.Config)
+	if err != nil {
+		return err
+	}
+	return o.run(ctx, sdk, runSpec{name: "create", skipKill: true})
 }

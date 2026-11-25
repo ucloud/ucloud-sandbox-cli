@@ -1,8 +1,9 @@
-// Package benchmark measures the latency of sandbox operations under load.
+// Package benchmark measures the latency and health of sandbox operations
+// under load.
 //
-// The runner is decoupled from the SDK: it drives Instance values handed out
-// by a CreateFunc, so the scheduling and statistics can be tested without a
-// real sandbox service.
+// The runner is decoupled from the SDK: it drives Sandbox values handed out
+// by a CreateFunc through a list of Steps, so the scheduling and statistics
+// can be tested without a real sandbox service.
 package benchmark
 
 import (
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-// Phase names one timed step of a lifecycle iteration.
+// Phase names one timed step of an iteration.
 type Phase string
 
 const (
@@ -25,31 +26,37 @@ const (
 	PhaseTotal Phase = "total"
 )
 
-// ErrSandboxNotFound is returned by Instance.Kill when the service answers
+// ErrSandboxNotFound is returned by Sandbox.Kill when the service answers
 // that the sandbox does not exist (HTTP 404). The kill counts as failed, but
 // the sandbox is not reported as leaked.
 var ErrSandboxNotFound = errors.New("sandbox not found (HTTP 404)")
 
-// Instance is a sandbox created by an iteration.
-type Instance interface {
+// Sandbox is the sandbox an iteration creates and works on.
+type Sandbox interface {
 	ID() string
-	Exec(ctx context.Context) error
 	Kill(ctx context.Context) error
 }
 
 // CreateFunc creates the sandbox one iteration works on.
-type CreateFunc func(ctx context.Context) (Instance, error)
+type CreateFunc[S Sandbox] func(ctx context.Context) (S, error)
 
-// LifecycleOptions shape a lifecycle benchmark run.
-type LifecycleOptions struct {
+// Step is one timed operation run on the sandbox between create and kill.
+type Step[S Sandbox] struct {
+	Phase Phase
+	Run   func(ctx context.Context, sbx S) error
+}
+
+// Options shape a benchmark run.
+type Options[S Sandbox] struct {
 	// Count is the number of iterations to run.
 	Count int
 
 	// Concurrency is the number of iterations in flight at once.
 	Concurrency int
 
-	// SkipExec leaves out the exec phase, so an iteration is create then kill.
-	SkipExec bool
+	// Steps run in order on every sandbox after it is created. A failing step
+	// does not stop the ones after it, so every step reports on its own.
+	Steps []Step[S]
 
 	// SkipKill leaves out the kill phase: every sandbox created is left running
 	// until its own timeout reclaims it.
@@ -58,6 +65,22 @@ type LifecycleOptions struct {
 	// OnIteration, when set, is called after every finished iteration with the
 	// running totals. Calls are serialized.
 	OnIteration func(progress Progress)
+}
+
+// phases lists the timed phases of an iteration in execution order, followed
+// by PhaseTotal when there is more than one to add up.
+func (o Options[S]) phases() []Phase {
+	phases := []Phase{PhaseCreate}
+	for _, step := range o.Steps {
+		phases = append(phases, step.Phase)
+	}
+	if !o.SkipKill {
+		phases = append(phases, PhaseKill)
+	}
+	if len(phases) > 1 {
+		phases = append(phases, PhaseTotal)
+	}
+	return phases
 }
 
 // Progress is the running state of a benchmark, as reported to OnIteration.
@@ -93,34 +116,18 @@ type IterationResult struct {
 	Leaked bool
 }
 
-// phases lists the timed phases of an iteration in execution order, followed
-// by PhaseTotal when there is more than one to add up.
-func (o LifecycleOptions) phases() []Phase {
-	phases := []Phase{PhaseCreate}
-	if !o.SkipExec {
-		phases = append(phases, PhaseExec)
-	}
-	if !o.SkipKill {
-		phases = append(phases, PhaseKill)
-	}
-	if len(phases) > 1 {
-		phases = append(phases, PhaseTotal)
-	}
-	return phases
-}
-
 // Succeeded reports whether every phase of the iteration succeeded.
 func (r IterationResult) Succeeded() bool {
 	return len(r.Errors) == 0
 }
 
-// RunLifecycle runs opts.Count create → exec → kill iterations with at most
-// opts.Concurrency of them in flight. SkipExec and SkipKill leave phases out.
+// Run runs opts.Count iterations with at most opts.Concurrency of them in
+// flight. An iteration creates a sandbox, runs opts.Steps on it and kills it.
 //
 // Cancelling ctx stops new iterations from starting. Iterations already in
 // flight run to completion on a context detached from ctx, so every sandbox
 // they created is still killed (unless SkipKill is set).
-func RunLifecycle(ctx context.Context, create CreateFunc, opts LifecycleOptions) Report {
+func Run[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) Report {
 	count := max(opts.Count, 0)
 	concurrency := min(max(opts.Concurrency, 1), max(count, 1))
 
@@ -182,33 +189,35 @@ dispatch:
 	return buildReport(results, count, opts.phases(), interrupted, time.Since(start))
 }
 
-// runIteration runs one create → exec → kill sequence, leaving out the phases
-// opts skips. The sandbox is killed even when exec fails.
-func runIteration(ctx context.Context, create CreateFunc, opts LifecycleOptions) IterationResult {
+// runIteration creates a sandbox, runs every step on it and kills it. The
+// sandbox is killed even when a step fails.
+func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) IterationResult {
 	result := IterationResult{
-		Durations: make(map[Phase]time.Duration, 4),
-		Connects:  make(map[Phase]time.Duration, 4),
+		Durations: make(map[Phase]time.Duration, len(opts.Steps)+3),
+		Connects:  make(map[Phase]time.Duration, len(opts.Steps)+3),
 	}
 
 	iterStart := time.Now()
 
-	var instance Instance
+	var sbx S
 	err := result.timePhase(ctx, PhaseCreate, func(ctx context.Context) error {
 		var err error
-		instance, err = create(ctx)
+		sbx, err = create(ctx)
 		return err
 	})
 	if err != nil {
 		return result
 	}
-	result.SandboxID = instance.ID()
+	result.SandboxID = sbx.ID()
 
-	if !opts.SkipExec {
-		result.timePhase(ctx, PhaseExec, instance.Exec)
+	for _, step := range opts.Steps {
+		result.timePhase(ctx, step.Phase, func(ctx context.Context) error {
+			return step.Run(ctx, sbx)
+		})
 	}
 
 	if !opts.SkipKill {
-		killErr := result.timePhase(ctx, PhaseKill, instance.Kill)
+		killErr := result.timePhase(ctx, PhaseKill, sbx.Kill)
 		result.Leaked = killErr != nil && !errors.Is(killErr, ErrSandboxNotFound)
 	}
 

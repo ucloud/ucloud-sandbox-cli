@@ -33,7 +33,7 @@ func TestLifecycleDefaults(t *testing.T) {
 	assert.Equal(t, "system/base", op.template)
 	assert.Equal(t, 10, op.count)
 	assert.Equal(t, 1, op.concurrency)
-	assert.Equal(t, "echo ok", op.exec.command)
+	assert.Equal(t, "echo ok", op.command)
 	assert.EqualValues(t, 300, op.timeout)
 	assert.Equal(t, "pretty", op.format)
 	assert.NoError(t, op.validate())
@@ -107,7 +107,7 @@ func TestLifecycleViewJSON(t *testing.T) {
 
 	assert.Equal(t, "run-1", decoded["run_id"])
 	assert.InDelta(t, 4000, decoded["elapsed_ms"], 1e-9)
-	assert.InDelta(t, 0.5, decoded["throughput_per_sec"], 1e-9)
+	assert.InDelta(t, 0.5, decoded["rate_per_sec"], 1e-9)
 
 	phases := decoded["phases"].([]any)
 	require.Len(t, phases, 2)
@@ -220,8 +220,8 @@ func TestLifecycleTracesSDKConnections(t *testing.T) {
 	require.NoError(t, err)
 
 	op := parseLifecycle(t, "--skip-exec")
-	report := benchmark.RunLifecycle(context.Background(), newCreator(sdk.Sandboxes(), "run-1", op.template, op.timeout, op.exec),
-		benchmark.LifecycleOptions{Count: 1, Concurrency: 1, SkipExec: true})
+	report := benchmark.Run(context.Background(), newCreator(sdk.Sandboxes(), "run-1", op.template, op.timeout),
+		benchmark.Options[*benchSandbox]{Count: 1, Concurrency: 1})
 
 	require.Equal(t, 1, report.Succeeded, "errors: %v", report.Errors)
 	for _, p := range report.Phases {
@@ -299,9 +299,9 @@ func TestCreateOnlyKillsNothing(t *testing.T) {
 	sdk, err := client.New(client.Options{APIKey: "test-key", APIURL: srv.URL})
 	require.NoError(t, err)
 
-	report := benchmark.RunLifecycle(context.Background(),
-		newCreator(sdk.Sandboxes(), "run-1", "tpl", 300, execOptions{}),
-		benchmark.LifecycleOptions{Count: 3, Concurrency: 2, SkipExec: true, SkipKill: true})
+	report := benchmark.Run(context.Background(),
+		newCreator(sdk.Sandboxes(), "run-1", "tpl", 300),
+		benchmark.Options[*benchSandbox]{Count: 3, Concurrency: 2, SkipKill: true})
 
 	require.Equal(t, 3, report.Succeeded, "errors: %v", report.Errors)
 	require.Len(t, report.Phases, 1)
@@ -310,10 +310,10 @@ func TestCreateOnlyKillsNothing(t *testing.T) {
 	assert.Zero(t, deletes.Load())
 }
 
-// TestSDKInstanceKillNotFound pins the SDK contract sdkInstance.Kill relies
+// TestBenchSandboxKillNotFound pins the SDK contract benchSandbox.Kill relies
 // on: only a 404 reads as not found, any other failure stays an error of its
 // own.
-func TestSDKInstanceKillNotFound(t *testing.T) {
+func TestBenchSandboxKillNotFound(t *testing.T) {
 	tests := []struct {
 		name     string
 		status   int
@@ -341,10 +341,10 @@ func TestSDKInstanceKillNotFound(t *testing.T) {
 			sdk, err := client.New(client.Options{APIKey: "test-key", APIURL: srv.URL})
 			require.NoError(t, err)
 
-			inst, err := newCreator(sdk.Sandboxes(), "run-1", "tpl", 300, execOptions{})(context.Background())
+			sbx, err := newCreator(sdk.Sandboxes(), "run-1", "tpl", 300)(context.Background())
 			require.NoError(t, err)
 
-			err = inst.Kill(context.Background())
+			err = sbx.Kill(context.Background())
 			if !tt.wantErr {
 				assert.NoError(t, err)
 				return
@@ -410,4 +410,19 @@ func TestRunViewCleanupHint(t *testing.T) {
 	assert.Contains(t, out, "2 sandbox(es) left running")
 	assert.Equal(t, 1, strings.Count(out, cleanup))
 	assert.Contains(t, out, "Clean them up with: "+cleanup)
+}
+
+func TestWriteHeader(t *testing.T) {
+	op := &runOptions{template: "system/base", count: 10, concurrency: 2}
+
+	var b strings.Builder
+	op.writeHeader(&b, "health", "20261125-225910-b2bbf0")
+
+	assert.Equal(t, `Running health benchmark 20261125-225910-b2bbf0
+  Template:     system/base
+  Iterations:   10 (concurrency 2)
+  Sandbox tag:  benchmark=20261125-225910-b2bbf0
+  Cleanup:      ucloud-sandbox-cli sandbox kill --all -m benchmark=20261125-225910-b2bbf0
+
+`, b.String())
 }
