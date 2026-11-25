@@ -161,15 +161,20 @@ func resolveDomain(cfg *Config) string {
 	return defaultDomain
 }
 
-// NewClient validates the config and creates a sandbox client.
-func NewClient(cfg *Config) (*client.Client, error) {
+// NewClient validates the config and creates a sandbox client. Each modifier
+// adjusts the SDK options after they are filled in from cfg, for commands that
+// need a client tuned differently from the default.
+func NewClient(cfg *Config, modifiers ...func(*client.Options)) (*client.Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("API key is required; set it in config or via UCLOUD_SANDBOX_API_KEY")
 	}
-	domain := resolveDomain(cfg)
-	return client.New(client.Options{
+	opts := client.Options{
 		APIKey:       cfg.APIKey,
-		Domain:       domain,
+		Domain:       resolveDomain(cfg),
 		InsecureHTTP: cfg.InsecureHTTP,
-	})
+	}
+	for _, modify := range modifiers {
+		modify(&opts)
+	}
+	return client.New(opts)
 }

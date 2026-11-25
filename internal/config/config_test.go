@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/client"
 )
 
 func setupHome(t *testing.T) string {
@@ -225,4 +226,16 @@ func TestNewClient_OK(t *testing.T) {
 	client, err := NewClient(&Config{APIKey: "test-key"})
 	require.NoError(t, err)
 	assert.NotNil(t, client)
+}
+
+func TestNewClient_AppliesModifiers(t *testing.T) {
+	var seen client.Options
+	_, err := NewClient(&Config{APIKey: "test-key", Region: "cn-test"},
+		func(o *client.Options) { o.Domain = "example.com" },
+		func(o *client.Options) { seen = *o },
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "test-key", seen.APIKey, "modifiers see the options filled in from the config")
+	assert.Equal(t, "example.com", seen.Domain, "modifiers run in order")
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd/auth"
+	"github.com/ucloud/ucloud-sandbox-cli/cmd/benchmark"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd/sandbox"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd/secret"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd/snapshot"
@@ -36,6 +37,7 @@ func newCommand() *cobra.Command {
 	}
 
 	c.AddCommand(auth.Command())
+	c.AddCommand(benchmark.Command())
 	c.AddCommand(sandbox.Command())
 	c.AddCommand(secret.Command())
 	c.AddCommand(snapshot.Command())
