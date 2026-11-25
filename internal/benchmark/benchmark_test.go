@@ -524,3 +524,70 @@ func TestRunStepsRunInOrderPastFailures(t *testing.T) {
 	assert.Equal(t, 1, phaseReport(t, report, "filesystem").Stats.Count)
 	assert.EqualValues(t, 1, svc.sandboxes[0].killCalls.Load())
 }
+
+func TestRunUntimedStep(t *testing.T) {
+	var order []Phase
+	record := func(phase Phase, sleep time.Duration, err error) Step[*fakeSandbox] {
+		return Step[*fakeSandbox]{Phase: phase, Run: func(context.Context, *fakeSandbox) error {
+			order = append(order, phase)
+			time.Sleep(sleep)
+			return err
+		}}
+	}
+	cleanup := record("cleanup", 20*time.Millisecond, nil)
+	cleanup.Untimed = true
+
+	svc := &fakeService{}
+	opts := Options[*fakeSandbox]{
+		Count:       1,
+		Concurrency: 1,
+		Steps:       []Step[*fakeSandbox]{record("work", 0, nil), cleanup, record("after", 0, nil)},
+	}
+	report := Run(context.Background(), svc.create, opts)
+
+	assert.Equal(t, []Phase{"work", "cleanup", "after"}, order, "untimed steps run in their place")
+	assert.Equal(t, []Phase{PhaseCreate, "work", "after", PhaseKill, PhaseTotal}, opts.phases(), "and get no row")
+	for _, p := range report.Phases {
+		assert.NotEqual(t, Phase("cleanup"), p.Phase)
+	}
+	assert.Equal(t, 1, report.Succeeded)
+	assert.Less(t, phaseReport(t, report, "after").Stats.Max, 20*time.Millisecond)
+}
+
+func TestRunUntimedStepFailureFailsIterationAndLeaks(t *testing.T) {
+	svc := &fakeService{}
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Count:       1,
+		Concurrency: 1,
+		Steps: []Step[*fakeSandbox]{{
+			Phase:   "cleanup",
+			Untimed: true,
+			Run: func(context.Context, *fakeSandbox) error {
+				return &LeakedError{IDs: []string{"sbx-fork"}, Err: errors.New("HTTP 500")}
+			},
+		}},
+	})
+
+	assert.Equal(t, 0, report.Succeeded, "a leak is a failure")
+	assert.Equal(t, 1, report.Failed)
+	assert.Equal(t, []string{"sbx-fork"}, report.Leaked)
+	assert.Equal(t, []ErrorCount{{Phase: "cleanup", Message: "could not kill 1 sandbox(es): HTTP 500", Count: 1}}, report.Errors)
+	assert.EqualValues(t, 1, svc.sandboxes[0].killCalls.Load(), "the sandbox is still killed")
+}
+
+func TestRunLeaksBothStepAndKillFailures(t *testing.T) {
+	svc := &fakeService{configure: func(_ int, sbx *fakeSandbox) error {
+		sbx.killErr = errors.New("kill timeout")
+		return nil
+	}}
+
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Count:       1,
+		Concurrency: 1,
+		Steps: []Step[*fakeSandbox]{{Phase: "cleanup", Untimed: true, Run: func(context.Context, *fakeSandbox) error {
+			return &LeakedError{IDs: []string{"sbx-fork"}, Err: errors.New("HTTP 500")}
+		}}},
+	})
+
+	assert.Equal(t, []string{"sbx-000", "sbx-fork"}, report.Leaked)
+}

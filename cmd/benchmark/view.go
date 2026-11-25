@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ucloud/ucloud-sandbox-cli/internal/benchmark"
@@ -31,12 +32,17 @@ type runView struct {
 	Errors []errorView `json:"errors"`
 	Leaked []string    `json:"leaked"`
 
+	// LeakedSnapshots names the snapshots the run took but could not delete.
+	// The names, not the IDs, are what `snapshot delete` deletes them by.
+	LeakedSnapshots []string `json:"leaked_snapshots"`
+
 	// LeftRunning counts the sandboxes the run left running on purpose, to be
 	// reclaimed by their timeout.
 	LeftRunning int `json:"left_running"`
 
-	// hideBreakdown leaves the connect/service rows out of the pretty table.
-	hideBreakdown bool
+	// breakdown shows every phase's full latency in the pretty table, with its
+	// connect and service rows under it, rather than its service time alone.
+	breakdown bool
 }
 
 // phaseView is the statistics of one phase. Its latencies cover the whole
@@ -93,6 +99,7 @@ func newRunView(runID, template string, concurrency int, timeoutSec int32, r ben
 		Phases:            make([]phaseView, 0, len(r.Phases)),
 		Errors:            make([]errorView, 0, len(r.Errors)),
 		Leaked:            append([]string{}, r.Leaked...),
+		LeakedSnapshots:   []string{},
 	}
 
 	for _, p := range r.Phases {
@@ -158,8 +165,10 @@ func (v runView) writePretty(w io.Writer) error {
 	fmt.Fprintf(w, "Elapsed: %s, rate: %s sandbox/s\n\n",
 		formatMs(v.ElapsedMs), strconv.FormatFloat(v.Rate, 'f', 2, 64))
 
-	// Every phase is followed by its breakdown: the time spent obtaining HTTP
-	// connections (DNS, dial, TLS), and the rest, spent on the service.
+	// By default a phase shows its service time: its latency less the time
+	// spent obtaining HTTP connections (DNS, dial, TLS), which depends on the
+	// client's network more than on the service. The breakdown shows the full
+	// latency, followed by both parts.
 	rows := make([]phaseRow, 0, 3*len(v.Phases))
 	for _, p := range v.Phases {
 		row := phaseRow{Phase: p.Phase, Succeeded: strconv.Itoa(p.Succeeded), Failed: strconv.Itoa(p.Failed)}
@@ -167,8 +176,8 @@ func (v runView) writePretty(w io.Writer) error {
 			rows = append(rows, row)
 			continue
 		}
-		if v.hideBreakdown {
-			rows = append(rows, row.withLatency(p.latencyView))
+		if !v.breakdown {
+			rows = append(rows, row.withLatency(p.Service))
 			continue
 		}
 		rows = append(rows,
@@ -198,6 +207,7 @@ func (v runView) writePretty(w io.Writer) error {
 	}
 
 	v.writeCleanup(w)
+	v.writeSnapshotCleanup(w)
 
 	return nil
 }
@@ -212,13 +222,22 @@ func (v runView) writeCleanup(w io.Writer) {
 		for _, id := range v.Leaked {
 			fmt.Fprintf(w, "  %s\n", id)
 		}
-		hint = "Clean them up with"
+		// Killing by ID also reaches a sandbox without the run's tag, which
+		// a fork may be.
+		fmt.Fprintf(w, "Kill them with: ucloud-sandbox-cli sandbox kill %s\n", strings.Join(v.Leaked, " "))
+		hint = "Clean up the rest of the run with"
 	}
 
 	// A create that failed on the client, a timeout say, may still have
 	// started its sandbox on the service, where nothing here can see it.
-	if failed := v.createFailed(); failed > 0 {
+	if failed := v.phaseFailed(benchmark.PhaseCreate); failed > 0 {
 		fmt.Fprintf(w, "\n%d create(s) failed; the service may still have started some of those sandboxes.\n", failed)
+		hint = "Clean them up with"
+	}
+
+	// Restoring and forking start sandboxes too, the same way.
+	if failed := v.phaseFailed(phaseRestore) + v.phaseFailed(phaseFork); failed > 0 {
+		fmt.Fprintf(w, "\n%d restore(s) or fork(s) failed; the service may still have started some of those sandboxes.\n", failed)
 		hint = "Clean them up with"
 	}
 
@@ -235,14 +254,33 @@ func (v runView) writeCleanup(w io.Writer) {
 	}
 }
 
-// createFailed returns the number of iterations whose create failed.
-func (v runView) createFailed() int {
+// phaseFailed returns the number of iterations in which phase failed.
+func (v runView) phaseFailed(phase benchmark.Phase) int {
 	for _, p := range v.Phases {
-		if p.Phase == string(benchmark.PhaseCreate) {
+		if p.Phase == string(phase) {
 			return p.Failed
 		}
 	}
 	return 0
+}
+
+// writeSnapshotCleanup tells the user about the snapshots the run may have
+// left behind. Unlike sandboxes, they never expire.
+func (v runView) writeSnapshotCleanup(w io.Writer) {
+	if len(v.LeakedSnapshots) > 0 {
+		fmt.Fprintf(w, "\n%d snapshot(s) could not be deleted and are kept until deleted:\n", len(v.LeakedSnapshots))
+		for _, id := range v.LeakedSnapshots {
+			fmt.Fprintf(w, "  %s\n", id)
+		}
+		fmt.Fprintf(w, "Delete them with: ucloud-sandbox-cli snapshot delete %s\n", strings.Join(v.LeakedSnapshots, " "))
+	}
+
+	// Like a create, a snapshot that failed on the client may still have been
+	// taken on the service.
+	if failed := v.phaseFailed(phaseSnapshot); failed > 0 {
+		fmt.Fprintf(w, "\n%d snapshot(s) failed; the service may still have taken some of them.\n", failed)
+		fmt.Fprintf(w, "Look for snapshots whose names contain %s in: ucloud-sandbox-cli snapshot list\n", snapshotNamePrefix(v.RunID))
+	}
 }
 
 // formatMs renders a millisecond value as a duration rounded to the

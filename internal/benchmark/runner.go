@@ -9,6 +9,7 @@ package benchmark
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -40,11 +41,29 @@ type Sandbox interface {
 // CreateFunc creates the sandbox one iteration works on.
 type CreateFunc[S Sandbox] func(ctx context.Context) (S, error)
 
-// Step is one timed operation run on the sandbox between create and kill.
+// Step is one operation run on the sandbox between create and kill.
 type Step[S Sandbox] struct {
 	Phase Phase
 	Run   func(ctx context.Context, sbx S) error
+
+	// Untimed steps do housekeeping, such as removing what earlier steps
+	// created. They fail the iteration like any step, but record no duration
+	// and get no row of their own in the report.
+	Untimed bool
 }
+
+// LeakedError is returned by a step that could not kill sandboxes it was
+// responsible for. Their IDs are reported as leaked.
+type LeakedError struct {
+	IDs []string
+	Err error
+}
+
+func (e *LeakedError) Error() string {
+	return fmt.Sprintf("could not kill %d sandbox(es): %v", len(e.IDs), e.Err)
+}
+
+func (e *LeakedError) Unwrap() error { return e.Err }
 
 // Options shape a benchmark run.
 type Options[S Sandbox] struct {
@@ -72,7 +91,9 @@ type Options[S Sandbox] struct {
 func (o Options[S]) phases() []Phase {
 	phases := []Phase{PhaseCreate}
 	for _, step := range o.Steps {
-		phases = append(phases, step.Phase)
+		if !step.Untimed {
+			phases = append(phases, step.Phase)
+		}
 	}
 	if !o.SkipKill {
 		phases = append(phases, PhaseKill)
@@ -112,8 +133,8 @@ type IterationResult struct {
 	// Errors lists the phases that failed, in the order they ran.
 	Errors []PhaseError
 
-	// Leaked reports that the sandbox was created but could not be killed.
-	Leaked bool
+	// Leaked lists the sandboxes the iteration created but could not kill.
+	Leaked []string
 }
 
 // Succeeded reports whether every phase of the iteration succeeded.
@@ -211,14 +232,19 @@ func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Opt
 	result.SandboxID = sbx.ID()
 
 	for _, step := range opts.Steps {
-		result.timePhase(ctx, step.Phase, func(ctx context.Context) error {
-			return step.Run(ctx, sbx)
-		})
+		run := func(ctx context.Context) error { return step.Run(ctx, sbx) }
+		if step.Untimed {
+			result.runUntimed(ctx, step.Phase, run)
+		} else {
+			result.timePhase(ctx, step.Phase, run)
+		}
 	}
 
 	if !opts.SkipKill {
 		killErr := result.timePhase(ctx, PhaseKill, sbx.Kill)
-		result.Leaked = killErr != nil && !errors.Is(killErr, ErrSandboxNotFound)
+		if killErr != nil && !errors.Is(killErr, ErrSandboxNotFound) {
+			result.Leaked = append(result.Leaked, result.SandboxID)
+		}
 	}
 
 	if result.Succeeded() {
@@ -240,11 +266,27 @@ func (r *IterationResult) timePhase(ctx context.Context, phase Phase, run func(c
 
 	start := time.Now()
 	if err := run(traced); err != nil {
-		r.Errors = append(r.Errors, PhaseError{Phase: phase, Err: err})
+		r.fail(phase, err)
 		return err
 	}
 	r.Durations[phase] = time.Since(start)
 	r.Connects[phase] = conn.Total()
 
 	return nil
+}
+
+// runUntimed runs an untimed step, recording only its error.
+func (r *IterationResult) runUntimed(ctx context.Context, phase Phase, run func(context.Context) error) {
+	if err := run(ctx); err != nil {
+		r.fail(phase, err)
+	}
+}
+
+// fail records the error of a phase, and the sandboxes it leaked.
+func (r *IterationResult) fail(phase Phase, err error) {
+	r.Errors = append(r.Errors, PhaseError{Phase: phase, Err: err})
+
+	if leaked, ok := errors.AsType[*LeakedError](err); ok {
+		r.Leaked = append(r.Leaked, leaked.IDs...)
+	}
 }

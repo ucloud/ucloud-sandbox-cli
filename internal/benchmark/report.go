@@ -113,9 +113,7 @@ func buildReport(
 			errorCounts[key]++
 		}
 
-		if r.Leaked {
-			report.Leaked = append(report.Leaked, r.SandboxID)
-		}
+		report.Leaked = append(report.Leaked, r.Leaked...)
 	}
 
 	for _, phase := range phases {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -164,19 +163,6 @@ func TestFetch(t *testing.T) {
 	_, err = fetch(context.Background(), srv.Client(), srv.URL+"/starting", "tok")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 502")
-}
-
-func TestRunViewHideBreakdown(t *testing.T) {
-	v := newRunView("run-1", "system/base", 1, 300, sampleReport())
-	v.hideBreakdown = true
-
-	var b strings.Builder
-	require.NoError(t, v.writePretty(&b))
-	out := b.String()
-
-	assert.Contains(t, out, "| create ")
-	assert.NotContains(t, out, "connect |")
-	assert.NotContains(t, out, "service |")
 }
 
 func healthPhases(t *testing.T, args ...string) []benchmark.Phase {

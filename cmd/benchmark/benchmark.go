@@ -15,5 +15,6 @@ func Command() *cobra.Command {
 	c.AddCommand(cmd.Build(&createOperation{}))
 	c.AddCommand(cmd.Build(&healthOperation{}))
 	c.AddCommand(cmd.Build(&lifecycleOperation{}))
+	c.AddCommand(cmd.Build(&snapshotOperation{}))
 	return c
 }

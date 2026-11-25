@@ -37,6 +37,7 @@ type runOptions struct {
 	concurrency int
 	timeout     int32
 	format      string
+	breakdown   bool
 }
 
 // addFlags registers the shared flags on c. defaultCount is the number of
@@ -48,6 +49,8 @@ func (o *runOptions) addFlags(c *cobra.Command, defaultCount int, timeoutUsage s
 	c.Flags().IntVarP(&o.concurrency, "concurrency", "c", 1, "Number of iterations in flight at once")
 	c.Flags().Int32VarP(&o.timeout, "timeout", "", 300, timeoutUsage)
 	c.Flags().StringVarP(&o.format, "format", "f", list.FormatPretty, "Output format (pretty, json)")
+	c.Flags().BoolVarP(&o.breakdown, "breakdown", "", false,
+		"Show each phase's full latency, split into connection setup (DNS, dial, TLS) and service time")
 }
 
 func (o *runOptions) validate() error {
@@ -79,9 +82,10 @@ type runSpec struct {
 	// skipKill leaves the sandboxes running until their timeout.
 	skipKill bool
 
-	// hideBreakdown leaves out the connect/service rows under every phase,
-	// for runs about whether things work rather than how fast.
-	hideBreakdown bool
+	// snapshots marks a run that takes snapshots, which outlive it unless
+	// deleted. leakedSnapshots, when set, returns the ones it failed to delete.
+	snapshots       bool
+	leakedSnapshots func() []string
 }
 
 // newClient returns the SDK client benchmarks run on: the configured one,
@@ -113,7 +117,7 @@ func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runS
 		}
 	}()
 
-	o.writeHeader(os.Stderr, spec.name, runID)
+	o.writeHeader(os.Stderr, spec, runID)
 
 	showProgress := term.IsTerminal(int(os.Stderr.Fd()))
 
@@ -135,7 +139,10 @@ func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runS
 	}
 
 	view := newRunView(runID, o.template, o.concurrency, o.timeout, report)
-	view.hideBreakdown = spec.hideBreakdown
+	if spec.leakedSnapshots != nil {
+		view.LeakedSnapshots = append(view.LeakedSnapshots, spec.leakedSnapshots()...)
+	}
+	view.breakdown = o.breakdown
 	if spec.skipKill && len(report.Phases) > 0 {
 		view.LeftRunning = report.Phases[0].Stats.Count
 	}
@@ -154,12 +161,19 @@ func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runS
 // writeHeader describes the run about to start. The cleanup command is given
 // up front, so a run that is killed outright still leaves a way to find its
 // sandboxes.
-func (o *runOptions) writeHeader(w io.Writer, name, runID string) {
-	fmt.Fprintf(w, "Running %s benchmark %s\n", name, runID)
+func (o *runOptions) writeHeader(w io.Writer, spec runSpec, runID string) {
+	fmt.Fprintf(w, "Running %s benchmark %s\n", spec.name, runID)
 	fmt.Fprintf(w, "  Template:     %s\n", o.template)
 	fmt.Fprintf(w, "  Iterations:   %d (concurrency %d)\n", o.count, o.concurrency)
 	fmt.Fprintf(w, "  Sandbox tag:  %s=%s\n", runIDMetadataKey, runID)
-	fmt.Fprintf(w, "  Cleanup:      %s\n\n", cleanupCommand(runID))
+	if spec.snapshots {
+		fmt.Fprintf(w, "  Snapshots:    named %s<sandbox-id>\n", snapshotNamePrefix(runID))
+	}
+	fmt.Fprintf(w, "  Cleanup:      %s\n", cleanupCommand(runID))
+	if spec.snapshots {
+		fmt.Fprintf(w, "                ucloud-sandbox-cli snapshot delete <snapshot-name...>\n")
+	}
+	fmt.Fprintln(w)
 }
 
 // exitError turns a report into the command's error, so scripts can tell a
@@ -198,18 +212,22 @@ func withoutRetries(opts *client.Options) {
 // newCreator returns the CreateFunc that starts the sandboxes of a run.
 func newCreator(svc *sandbox.Service, runID, template string, timeout int32) benchmark.CreateFunc[*benchSandbox] {
 	return func(ctx context.Context) (*benchSandbox, error) {
-		req := api.NewSandbox{
-			TemplateID: template,
-			Timeout:    &timeout,
-			Metadata:   &api.SandboxMetadata{runIDMetadataKey: runID},
-		}
-
-		created, err := svc.Create(ctx, req, manageBy)
+		created, err := svc.Create(ctx, sandboxRequest(template, runID, timeout), manageBy)
 		if err != nil {
 			return nil, err
 		}
 
-		return &benchSandbox{Sandbox: created, svc: svc, timeout: timeout}, nil
+		return &benchSandbox{Sandbox: created, svc: svc, runID: runID, timeout: timeout}, nil
+	}
+}
+
+// sandboxRequest returns the request creating a sandbox of a run from
+// template, which may also be a snapshot ID.
+func sandboxRequest(template, runID string, timeout int32) api.NewSandbox {
+	return api.NewSandbox{
+		TemplateID: template,
+		Timeout:    &timeout,
+		Metadata:   &api.SandboxMetadata{runIDMetadataKey: runID},
 	}
 }
 
@@ -218,13 +236,18 @@ func newCreator(svc *sandbox.Service, runID, template string, timeout int32) ben
 type benchSandbox struct {
 	*sandbox.Sandbox
 
-	// svc and timeout let the resume step connect to the sandbox again.
+	// svc, runID and timeout let the steps start, connect to and tag further
+	// sandboxes of the run.
 	svc     *sandbox.Service
+	runID   string
 	timeout int32
 
 	// paused records that the pause step succeeded, so the resume step can
 	// tell a resume from a connect to a sandbox that never paused.
 	paused bool
+
+	// snap is what the snapshot steps hand to the ones after them.
+	snap snapshotState
 }
 
 func (sbx *benchSandbox) ID() string {

@@ -132,8 +132,11 @@ func TestLifecycleViewJSONEmptyListsAreArrays(t *testing.T) {
 }
 
 func TestLifecycleViewPretty(t *testing.T) {
+	v := newRunView("run-1", "system/base", 2, 300, sampleReport())
+	v.breakdown = true
+
 	var b strings.Builder
-	require.NoError(t, newRunView("run-1", "system/base", 2, 300, sampleReport()).writePretty(&b))
+	require.NoError(t, v.writePretty(&b))
 	out := b.String()
 
 	assert.Contains(t, out, "Benchmark run-1 completed: template system/base, concurrency 2")
@@ -150,6 +153,27 @@ func TestLifecycleViewPretty(t *testing.T) {
 	assert.Contains(t, out, "Errors:")
 	assert.Contains(t, out, "exit status 1")
 	assert.Contains(t, out, "sandbox kill --all -m benchmark=run-1")
+}
+
+func TestRunViewShowsServiceTimeByDefault(t *testing.T) {
+	var b strings.Builder
+	require.NoError(t, newRunView("run-1", "system/base", 2, 300, sampleReport()).writePretty(&b))
+	out := b.String()
+
+	// The create row carries the service time (1.4s avg), not the full
+	// latency (1.5s), and nothing is broken out under it.
+	assert.Contains(t, out, "| create | 2         | 0      | 1.4s | 1s  | 1s  | 1.8s | 1.8s | 1.8s |")
+	assert.Contains(t, out, "| exec   | 0         | 1      | -    | -   | -   | -    | -    | -    |")
+	assert.NotContains(t, out, "connect")
+	assert.NotContains(t, out, "service")
+}
+
+func TestBreakdownFlag(t *testing.T) {
+	op := parseLifecycle(t)
+	assert.False(t, op.breakdown, "off by default")
+
+	op = parseLifecycle(t, "--breakdown")
+	assert.True(t, op.breakdown)
 }
 
 func TestLifecycleViewPrettyInterrupted(t *testing.T) {
@@ -406,6 +430,7 @@ func TestRunViewCleanupHint(t *testing.T) {
 	r.Phases[0].Failed = 1
 	out = render(r, 2)
 	assert.Contains(t, out, "could not be killed")
+	assert.Contains(t, out, "Kill them with: ucloud-sandbox-cli sandbox kill sbx-1", "leaks are killed by ID, tagged or not")
 	assert.Contains(t, out, "1 create(s) failed")
 	assert.Contains(t, out, "2 sandbox(es) left running")
 	assert.Equal(t, 1, strings.Count(out, cleanup))
@@ -416,7 +441,7 @@ func TestWriteHeader(t *testing.T) {
 	op := &runOptions{template: "system/base", count: 10, concurrency: 2}
 
 	var b strings.Builder
-	op.writeHeader(&b, "health", "20261125-225910-b2bbf0")
+	op.writeHeader(&b, runSpec{name: "health"}, "20261125-225910-b2bbf0")
 
 	assert.Equal(t, `Running health benchmark 20261125-225910-b2bbf0
   Template:     system/base

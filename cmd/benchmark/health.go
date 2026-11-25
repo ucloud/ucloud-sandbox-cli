@@ -152,9 +152,8 @@ func (o *healthOperation) Run(ctx cmd.OperationContext) error {
 	intranetHost := resolveIntranetHost(config.ResolveRegion(ctx.Config), o.intranetHost)
 
 	return o.run(ctx, sdk, runSpec{
-		name:          "health",
-		steps:         o.steps(sdk.Transport(), intranetHost),
-		hideBreakdown: true,
+		name:  "health",
+		steps: o.steps(sdk.Transport(), intranetHost),
 	})
 }
 
