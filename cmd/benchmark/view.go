@@ -40,6 +40,10 @@ type runView struct {
 	// reclaimed by their timeout.
 	LeftRunning int `json:"left_running"`
 
+	// Iterations is the raw sample of every iteration that ran. It is only
+	// written as JSON.
+	Iterations []iterationView `json:"iterations"`
+
 	// breakdown shows every phase's full latency in the pretty table, with its
 	// connect and service rows under it, rather than its service time alone.
 	breakdown bool
@@ -77,6 +81,58 @@ func newLatencyView(s benchmark.Stats) latencyView {
 	}
 }
 
+// iterationView is the outcome of one iteration.
+type iterationView struct {
+	Seq           int     `json:"seq"`
+	SandboxID     string  `json:"sandbox_id"`
+	StartOffsetMs float64 `json:"start_offset_ms"`
+	Succeeded     bool    `json:"succeeded"`
+
+	Phases []iterationPhaseView `json:"phases"`
+	Leaked []string             `json:"leaked"`
+}
+
+// iterationPhaseView is one phase of an iteration: its latencies when it
+// succeeded, its error when it failed. The latencies are pointers so a zero
+// connect time is still written.
+type iterationPhaseView struct {
+	Phase      string   `json:"phase"`
+	DurationMs *float64 `json:"duration_ms,omitempty"`
+	ConnectMs  *float64 `json:"connect_ms,omitempty"`
+	Error      string   `json:"error,omitempty"`
+}
+
+func newIterationView(r benchmark.IterationResult) iterationView {
+	v := iterationView{
+		Seq:           r.Seq,
+		SandboxID:     r.SandboxID,
+		StartOffsetMs: ms(r.Start),
+		Succeeded:     r.Succeeded(),
+		Phases:        make([]iterationPhaseView, 0, len(r.Phases)),
+		Leaked:        append([]string{}, r.Leaked...),
+	}
+
+	for _, p := range r.Phases {
+		if p.Err != nil {
+			// Collapse whitespace so the message fits on one line. Unlike the
+			// grouped errors, the sandbox ID is kept: it is this iteration's.
+			v.Phases = append(v.Phases, iterationPhaseView{
+				Phase: string(p.Phase),
+				Error: strings.Join(strings.Fields(p.Err.Error()), " "),
+			})
+			continue
+		}
+		duration, connect := ms(p.Duration), ms(p.Connect)
+		v.Phases = append(v.Phases, iterationPhaseView{
+			Phase:      string(p.Phase),
+			DurationMs: &duration,
+			ConnectMs:  &connect,
+		})
+	}
+
+	return v
+}
+
 type errorView struct {
 	Phase   string `json:"phase"`
 	Count   int    `json:"count"`
@@ -100,6 +156,7 @@ func newRunView(runID, template string, concurrency int, timeoutSec int32, r ben
 		Errors:            make([]errorView, 0, len(r.Errors)),
 		Leaked:            append([]string{}, r.Leaked...),
 		LeakedSnapshots:   []string{},
+		Iterations:        make([]iterationView, 0, len(r.Iterations)),
 	}
 
 	for _, p := range r.Phases {
@@ -115,6 +172,10 @@ func newRunView(runID, template string, concurrency int, timeoutSec int32, r ben
 
 	for _, e := range r.Errors {
 		v.Errors = append(v.Errors, errorView{Phase: string(e.Phase), Count: e.Count, Message: e.Message})
+	}
+
+	for _, it := range r.Iterations {
+		v.Iterations = append(v.Iterations, newIterationView(it))
 	}
 
 	return v

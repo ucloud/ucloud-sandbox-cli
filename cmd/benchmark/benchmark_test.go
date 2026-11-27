@@ -129,6 +129,67 @@ func TestLifecycleViewJSONEmptyListsAreArrays(t *testing.T) {
 
 	assert.Contains(t, string(data), `"errors":[]`)
 	assert.Contains(t, string(data), `"leaked":[]`)
+	assert.Contains(t, string(data), `"iterations":[]`)
+}
+
+func TestRunViewJSONIterations(t *testing.T) {
+	r := sampleReport()
+	r.Iterations = []benchmark.IterationResult{
+		{
+			Seq:       1,
+			Start:     1500 * time.Microsecond,
+			SandboxID: "sbx-1",
+			Phases: []benchmark.PhaseResult{
+				{Phase: benchmark.PhaseCreate, Duration: time.Second, Connect: 200 * time.Millisecond},
+				{Phase: benchmark.PhaseExec, Err: errors.New("exit status 1:\n  sbx-1 said no")},
+				{Phase: benchmark.PhaseKill, Duration: 50 * time.Millisecond},
+			},
+			Leaked: []string{"sbx-1"},
+		},
+		{
+			Seq:    2,
+			Start:  3 * time.Millisecond,
+			Phases: []benchmark.PhaseResult{{Phase: benchmark.PhaseCreate, Err: errors.New("quota exceeded")}},
+		},
+	}
+
+	data, err := json.Marshal(newRunView("run-1", "system/base", 2, 300, r))
+	require.NoError(t, err)
+
+	var decoded struct {
+		Iterations []map[string]any `json:"iterations"`
+	}
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Iterations, 2)
+
+	first := decoded.Iterations[0]
+	assert.InDelta(t, 1, first["seq"], 0)
+	assert.Equal(t, "sbx-1", first["sandbox_id"])
+	assert.InDelta(t, 1.5, first["start_offset_ms"], 1e-9)
+	assert.Equal(t, false, first["succeeded"])
+	assert.Equal(t, []any{"sbx-1"}, first["leaked"])
+	assert.Equal(t, []any{
+		map[string]any{"phase": "create", "duration_ms": 1000.0, "connect_ms": 200.0},
+		// The sandbox ID is kept, unlike in the grouped errors.
+		map[string]any{"phase": "exec", "error": "exit status 1: sbx-1 said no"},
+		// A zero connect time is still written.
+		map[string]any{"phase": "kill", "duration_ms": 50.0, "connect_ms": 0.0},
+	}, first["phases"])
+
+	second := decoded.Iterations[1]
+	assert.Equal(t, "", second["sandbox_id"], "a failed create has no sandbox")
+	assert.Equal(t, []any{}, second["leaked"])
+	assert.Equal(t, []any{map[string]any{"phase": "create", "error": "quota exceeded"}}, second["phases"])
+}
+
+func TestRunViewPrettyOmitsIterations(t *testing.T) {
+	r := sampleReport()
+	r.Iterations = []benchmark.IterationResult{{Seq: 1, SandboxID: "sbx-iteration"}}
+
+	var b strings.Builder
+	require.NoError(t, newRunView("run-1", "system/base", 2, 300, r).writePretty(&b))
+
+	assert.NotContains(t, b.String(), "sbx-iteration")
 }
 
 func TestLifecycleViewPretty(t *testing.T) {

@@ -164,6 +164,10 @@ func verifyRestored(ctx context.Context, sbx *benchSandbox) error {
 }
 
 // forkSandbox forks one copy of the sandbox.
+//
+// The fork request carries no metadata, but the service copies the source's
+// metadata to its forks, run ID tag included. That is what lets the cleanup
+// command, which kills by the tag, also reach a fork this step lost track of.
 func forkSandbox(ctx context.Context, sbx *benchSandbox) error {
 	count := int32(1)
 	results, err := sbx.svc.Fork(ctx, sbx.ID(), api.SandboxForkRequest{Count: &count, Timeout: &sbx.timeout})

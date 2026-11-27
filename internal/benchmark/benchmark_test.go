@@ -312,6 +312,7 @@ func TestRunCancelStopsNewIterationsAndCleansUp(t *testing.T) {
 	assert.Equal(t, 100, report.Requested)
 	assert.Equal(t, 2, report.Started)
 	assert.Equal(t, 2, report.Succeeded, "the in-flight iteration completes on a detached context")
+	assert.Len(t, report.Iterations, 2, "iterations that never started have no result")
 
 	for _, sbx := range svc.sandboxes {
 		assert.EqualValues(t, 1, sbx.killCalls.Load(), sbx.id)
@@ -590,4 +591,114 @@ func TestRunLeaksBothStepAndKillFailures(t *testing.T) {
 	})
 
 	assert.Equal(t, []string{"sbx-000", "sbx-fork"}, report.Leaked)
+}
+
+// phaseNames returns the phases of an iteration in the order they ran, each
+// suffixed with "!" when it failed.
+func phaseNames(r IterationResult) []string {
+	names := make([]string, 0, len(r.Phases))
+	for _, p := range r.Phases {
+		if p.Err != nil {
+			names = append(names, string(p.Phase)+"!")
+		} else {
+			names = append(names, string(p.Phase))
+		}
+	}
+	return names
+}
+
+func TestRunRecordsIterations(t *testing.T) {
+	svc := &fakeService{
+		configure: func(n int, sbx *fakeSandbox) error {
+			switch n {
+			case 1:
+				return errors.New("quota exceeded")
+			case 2:
+				sbx.execErr = errors.New("exit status 1")
+			case 3:
+				sbx.killErr = errors.New("kill timeout")
+			}
+			return nil
+		},
+	}
+
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Steps:       execSteps[*fakeSandbox](),
+		Count:       4,
+		Concurrency: 1,
+	})
+
+	require.Len(t, report.Iterations, 4)
+
+	var prevStart time.Duration
+	for i, it := range report.Iterations {
+		assert.Equal(t, i+1, it.Seq)
+		assert.GreaterOrEqual(t, it.Start, prevStart, "a serial run starts its iterations in order")
+		prevStart = it.Start
+	}
+
+	ok := report.Iterations[0]
+	assert.True(t, ok.Succeeded())
+	assert.Equal(t, "sbx-000", ok.SandboxID)
+	assert.Equal(t, []string{"create", "exec", "kill", "total"}, phaseNames(ok))
+	total := ok.Phases[3]
+	assert.GreaterOrEqual(t, total.Duration, ok.Phases[0].Duration+ok.Phases[1].Duration+ok.Phases[2].Duration)
+
+	createFailed := report.Iterations[1]
+	assert.False(t, createFailed.Succeeded())
+	assert.Empty(t, createFailed.SandboxID)
+	assert.Equal(t, []string{"create!"}, phaseNames(createFailed), "no phase runs after a failed create")
+	assert.EqualError(t, createFailed.Phases[0].Err, "quota exceeded")
+	assert.Zero(t, createFailed.Phases[0].Duration)
+
+	execFailed := report.Iterations[2]
+	assert.Equal(t, []string{"create", "exec!", "kill"}, phaseNames(execFailed), "a failed iteration has no total")
+
+	killFailed := report.Iterations[3]
+	assert.Equal(t, []string{"create", "exec", "kill!"}, phaseNames(killFailed))
+	assert.Equal(t, "sbx-003", killFailed.SandboxID)
+	assert.Equal(t, []string{"sbx-003"}, killFailed.Leaked)
+}
+
+func TestRunOrdersIterationsBySeq(t *testing.T) {
+	var n atomic.Int32
+	create := func(context.Context) (*fakeSandbox, error) {
+		// Later iterations finish first, so completion order is not seq order.
+		time.Sleep(time.Duration(10-n.Add(1)%10) * time.Millisecond)
+		return &fakeSandbox{id: "sbx"}, nil
+	}
+
+	report := Run(context.Background(), create, Options[*fakeSandbox]{Count: 20, Concurrency: 4})
+
+	require.Len(t, report.Iterations, 20)
+	for i, it := range report.Iterations {
+		assert.Equal(t, i+1, it.Seq)
+	}
+}
+
+func TestRunRecordsUntimedStepOnlyWhenItFails(t *testing.T) {
+	step := func(phase Phase, untimed bool, err error) Step[*fakeSandbox] {
+		return Step[*fakeSandbox]{Phase: phase, Untimed: untimed, Run: func(context.Context, *fakeSandbox) error {
+			return err
+		}}
+	}
+
+	run := func(cleanupErr error) IterationResult {
+		svc := &fakeService{}
+		report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+			Count:       1,
+			Concurrency: 1,
+			Steps: []Step[*fakeSandbox]{
+				step("work", false, nil),
+				step("cleanup", true, cleanupErr),
+				step("after", false, nil),
+			},
+		})
+		require.Len(t, report.Iterations, 1)
+		return report.Iterations[0]
+	}
+
+	assert.Equal(t, []string{"create", "work", "after", "kill", "total"}, phaseNames(run(nil)))
+	assert.Equal(t, []string{"create", "work", "cleanup!", "after", "kill"}, phaseNames(run(errors.New("HTTP 500"))),
+		"a failed untimed step shows up where it ran")
 }

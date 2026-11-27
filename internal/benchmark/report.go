@@ -29,6 +29,10 @@ type Report struct {
 
 	// Leaked lists the sandboxes that were created but could not be killed.
 	Leaked []string
+
+	// Iterations holds the result of every iteration that ran, ordered by
+	// Seq.
+	Iterations []IterationResult
 }
 
 // PhaseReport is the latency statistics of one phase. Stats.Count is the
@@ -96,17 +100,17 @@ func buildReport(
 			failed[PhaseTotal]++
 		}
 
-		for phase, d := range r.Durations {
-			connect := r.Connects[phase]
-			samples[phase] = append(samples[phase], d)
-			connects[phase] = append(connects[phase], connect)
-			services[phase] = append(services[phase], d-connect)
-		}
+		for _, p := range r.Phases {
+			if p.Err == nil {
+				samples[p.Phase] = append(samples[p.Phase], p.Duration)
+				connects[p.Phase] = append(connects[p.Phase], p.Connect)
+				services[p.Phase] = append(services[p.Phase], p.Duration-p.Connect)
+				continue
+			}
 
-		for _, e := range r.Errors {
-			failed[e.Phase]++
+			failed[p.Phase]++
 
-			key := errorKey{phase: e.Phase, message: normalizeMessage(e.Err.Error(), r.SandboxID)}
+			key := errorKey{phase: p.Phase, message: normalizeMessage(p.Err.Error(), r.SandboxID)}
 			if errorCounts[key] == 0 {
 				errorOrder = append(errorOrder, key)
 			}
@@ -139,6 +143,10 @@ func buildReport(
 	})
 
 	slices.Sort(report.Leaked)
+
+	report.Iterations = slices.SortedFunc(slices.Values(results), func(a, b IterationResult) int {
+		return cmp.Compare(a.Seq, b.Seq)
+	})
 
 	return report
 }

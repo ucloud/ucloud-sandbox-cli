@@ -112,26 +112,36 @@ type Progress struct {
 	Failed    int
 }
 
-// PhaseError is the failure of one phase of an iteration.
-type PhaseError struct {
+// PhaseResult is the outcome of one phase of an iteration.
+type PhaseResult struct {
 	Phase Phase
-	Err   error
+
+	// Duration is the time the phase took, and Connect the part of it spent
+	// obtaining HTTP connections (DNS, dial, TLS); the rest is the time the
+	// service took to respond. Both are zero when the phase failed.
+	Duration time.Duration
+	Connect  time.Duration
+
+	// Err is the error the phase failed with, nil when it succeeded.
+	Err error
 }
 
 // IterationResult is the outcome of one iteration.
 type IterationResult struct {
+	// Seq numbers the iterations from 1 in the order they were handed out.
+	Seq int
+
+	// Start is when the iteration started, as an offset from the start of
+	// the run.
+	Start time.Duration
+
 	SandboxID string
 
-	// Durations holds the time taken by every phase that succeeded.
-	Durations map[Phase]time.Duration
-
-	// Connects holds, for every phase in Durations, the part of its time spent
-	// obtaining HTTP connections (DNS, dial, TLS). The rest is the time the
-	// service took to respond.
-	Connects map[Phase]time.Duration
-
-	// Errors lists the phases that failed, in the order they ran.
-	Errors []PhaseError
+	// Phases lists the phases the iteration ran, in the order it ran them,
+	// followed by PhaseTotal when every phase succeeded. A successful untimed
+	// step leaves no entry; a phase never reached, after a failed create say,
+	// leaves none either.
+	Phases []PhaseResult
 
 	// Leaked lists the sandboxes the iteration created but could not kill.
 	Leaked []string
@@ -139,7 +149,12 @@ type IterationResult struct {
 
 // Succeeded reports whether every phase of the iteration succeeded.
 func (r IterationResult) Succeeded() bool {
-	return len(r.Errors) == 0
+	for _, p := range r.Phases {
+		if p.Err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // Run runs opts.Count iterations with at most opts.Concurrency of them in
@@ -155,7 +170,7 @@ func Run[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) 
 	// In-flight iterations must be able to clean up after a cancellation.
 	iterCtx := context.WithoutCancel(ctx)
 
-	jobs := make(chan struct{})
+	jobs := make(chan int)
 	var (
 		mu       sync.Mutex
 		results  = make([]IterationResult, 0, count)
@@ -167,14 +182,14 @@ func Run[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) 
 
 	for range concurrency {
 		wg.Go(func() {
-			for range jobs {
+			for seq := range jobs {
 				// The dispatcher may hand out a job in the same instant ctx is
 				// cancelled; drop it rather than start a new sandbox.
 				if ctx.Err() != nil {
 					continue
 				}
 
-				result := runIteration(iterCtx, create, opts)
+				result := runIteration(iterCtx, create, opts, seq, start)
 
 				mu.Lock()
 				results = append(results, result)
@@ -193,11 +208,11 @@ func Run[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) 
 	}
 
 dispatch:
-	for range count {
+	for seq := 1; seq <= count; seq++ {
 		select {
 		case <-ctx.Done():
 			break dispatch
-		case jobs <- struct{}{}:
+		case jobs <- seq:
 		}
 	}
 	close(jobs)
@@ -211,14 +226,16 @@ dispatch:
 }
 
 // runIteration creates a sandbox, runs every step on it and kills it. The
-// sandbox is killed even when a step fails.
-func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S]) IterationResult {
-	result := IterationResult{
-		Durations: make(map[Phase]time.Duration, len(opts.Steps)+3),
-		Connects:  make(map[Phase]time.Duration, len(opts.Steps)+3),
-	}
-
+// sandbox is killed even when a step fails. seq numbers the iteration, and
+// runStart is when the run started.
+func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Options[S], seq int, runStart time.Time) IterationResult {
 	iterStart := time.Now()
+
+	result := IterationResult{
+		Seq:    seq,
+		Start:  iterStart.Sub(runStart),
+		Phases: make([]PhaseResult, 0, len(opts.Steps)+3),
+	}
 
 	var sbx S
 	err := result.timePhase(ctx, PhaseCreate, func(ctx context.Context) error {
@@ -249,11 +266,14 @@ func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Opt
 
 	if result.Succeeded() {
 		var connect time.Duration
-		for _, d := range result.Connects {
-			connect += d
+		for _, p := range result.Phases {
+			connect += p.Connect
 		}
-		result.Durations[PhaseTotal] = time.Since(iterStart)
-		result.Connects[PhaseTotal] = connect
+		result.Phases = append(result.Phases, PhaseResult{
+			Phase:    PhaseTotal,
+			Duration: time.Since(iterStart),
+			Connect:  connect,
+		})
 	}
 
 	return result
@@ -269,8 +289,7 @@ func (r *IterationResult) timePhase(ctx context.Context, phase Phase, run func(c
 		r.fail(phase, err)
 		return err
 	}
-	r.Durations[phase] = time.Since(start)
-	r.Connects[phase] = conn.Total()
+	r.Phases = append(r.Phases, PhaseResult{Phase: phase, Duration: time.Since(start), Connect: conn.Total()})
 
 	return nil
 }
@@ -284,7 +303,7 @@ func (r *IterationResult) runUntimed(ctx context.Context, phase Phase, run func(
 
 // fail records the error of a phase, and the sandboxes it leaked.
 func (r *IterationResult) fail(phase Phase, err error) {
-	r.Errors = append(r.Errors, PhaseError{Phase: phase, Err: err})
+	r.Phases = append(r.Phases, PhaseResult{Phase: phase, Err: err})
 
 	if leaked, ok := errors.AsType[*LeakedError](err); ok {
 		r.Leaked = append(r.Leaked, leaked.IDs...)
