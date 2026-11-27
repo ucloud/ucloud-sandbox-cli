@@ -96,6 +96,23 @@ func TestRender_Errors(t *testing.T) {
 	assert.Error(t, err) // element must be a struct
 }
 
+func TestRenderPlain_OmitsPaginationHeader(t *testing.T) {
+	out, err := RenderPlain([]sample{{Title: "x"}})
+	require.NoError(t, err)
+	assert.NotContains(t, out, "Page:")
+	assert.True(t, strings.HasPrefix(out, "+"), "starts with the top border, got: %q", out)
+	assert.Contains(t, out, "| x ")
+
+	paged, err := Render([]sample{{Title: "x"}}, 1, 20, 1)
+	require.NoError(t, err)
+	assert.Equal(t, "Page: 1/1, Total: 1\n"+out, paged)
+}
+
+func TestRenderPlain_Errors(t *testing.T) {
+	_, err := RenderPlain("not a slice")
+	assert.Error(t, err)
+}
+
 func TestRender_TotalPages(t *testing.T) {
 	// page-size 0 with non-zero total -> 1 page.
 	out, err := Render([]sample{{Title: "x"}}, 1, 0, 5)

@@ -36,6 +36,17 @@ type column struct {
 // (returned by the backend / service), used to compute the total page count
 // in the header. The trailing newline is included.
 func Render(items any, page, pageSize int, total int64) (string, error) {
+	body, err := RenderPlain(items)
+	if err != nil {
+		return "", err
+	}
+	return renderHeader(page, pageSize, total) + "\n" + body, nil
+}
+
+// RenderPlain renders items as an ASCII table without the pagination header.
+// It follows the same column rules as Render; an element type without columns
+// renders as an empty string.
+func RenderPlain(items any) (string, error) {
 	rv := reflect.ValueOf(items)
 	if !rv.IsValid() {
 		return "", fmt.Errorf("table: items is nil")
@@ -71,8 +82,6 @@ func Render(items any, page, pageSize int, total int64) (string, error) {
 	widths := computeWidths(cols, body)
 
 	var b strings.Builder
-	b.WriteString(renderHeader(page, pageSize, total))
-	b.WriteByte('\n')
 	if len(cols) == 0 {
 		return b.String(), nil
 	}

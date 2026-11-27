@@ -1,0 +1,177 @@
+package benchmark
+
+import (
+	"cmp"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+)
+
+// Report aggregates the results of a benchmark run.
+type Report struct {
+	// Requested is the number of iterations asked for; Started is the number
+	// that actually ran, which is lower when the run was interrupted.
+	Requested int
+	Started   int
+
+	Succeeded int
+	Failed    int
+
+	Interrupted bool
+	Elapsed     time.Duration
+
+	// Phases holds the statistics of every timed phase, in execution order and
+	// followed by PhaseTotal when the run timed more than one.
+	Phases []PhaseReport
+
+	// Errors groups the failures by phase and message, most frequent first.
+	Errors []ErrorCount
+
+	// Leaked lists the sandboxes that were created but could not be killed.
+	Leaked []string
+
+	// Iterations holds the result of every iteration that ran, ordered by
+	// Seq.
+	Iterations []IterationResult
+}
+
+// PhaseReport is the latency statistics of one phase. Stats.Count is the
+// number of times the phase succeeded.
+//
+// Every successful sample is split in two: Connect is the time spent
+// obtaining HTTP connections (DNS, dial, TLS), and Service is the rest, the
+// time the service took to respond. Each is summarized on its own, so their
+// percentiles do not add up to those of Stats.
+type PhaseReport struct {
+	Phase   Phase
+	Failed  int
+	Stats   Stats
+	Connect Stats
+	Service Stats
+}
+
+// ErrorCount is the number of times one error occurred in one phase.
+type ErrorCount struct {
+	Phase   Phase
+	Message string
+	Count   int
+}
+
+// Rate returns the number of successful iterations per second.
+func (r Report) Rate() float64 {
+	if r.Elapsed <= 0 {
+		return 0
+	}
+	return float64(r.Succeeded) / r.Elapsed.Seconds()
+}
+
+func buildReport(
+	results []IterationResult,
+	requested int,
+	phases []Phase,
+	interrupted bool,
+	elapsed time.Duration,
+) Report {
+
+	report := Report{
+		Requested:   requested,
+		Started:     len(results),
+		Interrupted: interrupted,
+		Elapsed:     elapsed,
+	}
+
+	samples := make(map[Phase][]time.Duration, len(phases))
+	connects := make(map[Phase][]time.Duration, len(phases))
+	services := make(map[Phase][]time.Duration, len(phases))
+	failed := make(map[Phase]int, len(phases))
+
+	type errorKey struct {
+		phase   Phase
+		message string
+	}
+	errorCounts := make(map[errorKey]int)
+	var errorOrder []errorKey
+
+	for _, r := range results {
+		if r.Succeeded() {
+			report.Succeeded++
+		} else {
+			report.Failed++
+			failed[PhaseTotal]++
+		}
+
+		for _, p := range r.Phases {
+			if p.Err == nil {
+				samples[p.Phase] = append(samples[p.Phase], p.Duration)
+				connects[p.Phase] = append(connects[p.Phase], p.Connect)
+				services[p.Phase] = append(services[p.Phase], p.Duration-p.Connect)
+				continue
+			}
+
+			failed[p.Phase]++
+
+			key := errorKey{phase: p.Phase, message: normalizeMessage(p.Err, r.SandboxID)}
+			if errorCounts[key] == 0 {
+				errorOrder = append(errorOrder, key)
+			}
+			errorCounts[key]++
+		}
+
+		report.Leaked = append(report.Leaked, r.Leaked...)
+	}
+
+	for _, phase := range phases {
+		report.Phases = append(report.Phases, PhaseReport{
+			Phase:   phase,
+			Failed:  failed[phase],
+			Stats:   Summarize(samples[phase]),
+			Connect: Summarize(connects[phase]),
+			Service: Summarize(services[phase]),
+		})
+	}
+
+	for _, key := range errorOrder {
+		report.Errors = append(report.Errors, ErrorCount{
+			Phase:   key.phase,
+			Message: key.message,
+			Count:   errorCounts[key],
+		})
+	}
+	// Stable, so errors seen equally often keep the order they first appeared.
+	slices.SortStableFunc(report.Errors, func(a, b ErrorCount) int {
+		return cmp.Compare(b.Count, a.Count)
+	})
+
+	slices.Sort(report.Leaked)
+
+	report.Iterations = slices.SortedFunc(slices.Values(results), func(a, b IterationResult) int {
+		return cmp.Compare(a.Seq, b.Seq)
+	})
+
+	return report
+}
+
+// sandboxPlaceholder stands in for the sandbox ID in a normalized message.
+const sandboxPlaceholder = "<sandbox>"
+
+// urlErrorPattern matches the request half of the message net/http puts in
+// front of the error of a failed request: the verb and the quoted URL. The
+// URL names the sandbox and the request, which the phase and the sandbox ID
+// already tell, and its length pushes the cause off the end of the message
+// column. Any verb matches, since every request the benchmark makes can fail.
+var urlErrorPattern = regexp.MustCompile(`\w+ "https?://[^"]*": `)
+
+// normalizeMessage prepares an error message for grouping and display. The
+// request URL is dropped, since it is long and says nothing the phase does
+// not, the iteration's sandbox ID, which turns up in hosts such as
+// "49983-<id>.<domain>", is replaced by a placeholder so the same failure in
+// different sandboxes groups together, and runs of whitespace, newlines
+// included, collapse to one space so the message fits on one table row.
+func normalizeMessage(err error, sandboxID string) string {
+	msg := urlErrorPattern.ReplaceAllString(err.Error(), "")
+	if sandboxID != "" {
+		msg = strings.ReplaceAll(msg, sandboxID, sandboxPlaceholder)
+	}
+	return strings.Join(strings.Fields(msg), " ")
+}

@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	defaultDomain  = "cn-wlcb.sandbox.ucloudai.com"
-	domainTemplate = "%s.sandbox.ucloudai.com"
+	defaultRegion  = "cn-wlcb"
+	defaultDomain  = defaultRegion + ".sandbox.ucloudai.com"
+	domainSuffix   = ".sandbox.ucloudai.com"
+	domainTemplate = "%s" + domainSuffix
 	configDir      = ".ucloud-sandbox-cli"
 	configFile     = "config.json"
 
@@ -161,15 +163,38 @@ func resolveDomain(cfg *Config) string {
 	return defaultDomain
 }
 
-// NewClient validates the config and creates a sandbox client.
-func NewClient(cfg *Config) (*client.Client, error) {
+// ResolveRegion returns the region the API calls go to. The domain takes
+// precedence over the region there, so a domain of the "<region>.sandbox.
+// ucloudai.com" form names the region; a custom domain names none, and the
+// configured region is assumed to match it. ok is false when neither tells
+// the region.
+func ResolveRegion(cfg *Config) (region string, ok bool) {
+	if cfg.Domain != "" {
+		if r, found := strings.CutSuffix(cfg.Domain, domainSuffix); found && r != "" && !strings.Contains(r, ".") {
+			return r, true
+		}
+		return cfg.Region, cfg.Region != ""
+	}
+	if cfg.Region != "" {
+		return cfg.Region, true
+	}
+	return defaultRegion, true
+}
+
+// NewClient validates the config and creates a sandbox client. Each modifier
+// adjusts the SDK options after they are filled in from cfg, for commands that
+// need a client tuned differently from the default.
+func NewClient(cfg *Config, modifiers ...func(*client.Options)) (*client.Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("API key is required; set it in config or via UCLOUD_SANDBOX_API_KEY")
 	}
-	domain := resolveDomain(cfg)
-	return client.New(client.Options{
+	opts := client.Options{
 		APIKey:       cfg.APIKey,
-		Domain:       domain,
+		Domain:       resolveDomain(cfg),
 		InsecureHTTP: cfg.InsecureHTTP,
-	})
+	}
+	for _, modify := range modifiers {
+		modify(&opts)
+	}
+	return client.New(opts)
 }
