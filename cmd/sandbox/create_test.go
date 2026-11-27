@@ -68,7 +68,7 @@ func TestCreateSimpleFlags(t *testing.T) {
 		"--env", "BAZ:qux",
 		"--env", "URL: https://example.com:8080",
 		"-m", "user: abc",
-		"-m", "ucloud.cn/volume.v2:test-volume: /mnt",
+		"-m", "ucloud.cn/resource:test-name: /mnt",
 		"--metadata", "  namespace:resource:name: /data  ",
 		"--secure",
 		"--timeout", "300",
@@ -84,9 +84,9 @@ func TestCreateSimpleFlags(t *testing.T) {
 	assert.Equal(t, api.EnvVars{"FOO": "bar", "BAZ": "qux", "URL": "https://example.com:8080"}, *req.EnvVars)
 	require.NotNil(t, req.Metadata)
 	assert.Equal(t, api.SandboxMetadata{
-		"user":                            "abc",
-		"ucloud.cn/volume.v2:test-volume": "/mnt",
-		"namespace:resource:name":         "/data",
+		"user":                         "abc",
+		"ucloud.cn/resource:test-name": "/mnt",
+		"namespace:resource:name":      "/data",
 	}, *req.Metadata)
 	require.NotNil(t, req.Secure)
 	assert.True(t, *req.Secure)
@@ -248,36 +248,6 @@ func TestCreateMountFlagRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-func TestCreateMount2PreservesMetadataAndV1Mounts(t *testing.T) {
-	req := parseCreateFlags(t,
-		"--metadata", "app: worker",
-		"--mount2", "data:/mnt/data",
-		"--mount", "legacy:/mnt/legacy",
-		"--mount2", " cache : /mnt/cache ",
-		"--metadata", "owner: team",
-		"--mount2", "data:/mnt/new-data",
-	)
-
-	require.NotNil(t, req.Metadata)
-	assert.Equal(t, api.SandboxMetadata{
-		"app": "worker", "owner": "team",
-		"volume.v2.sandbox.ucloudai.com:data":  "/mnt/new-data",
-		"volume.v2.sandbox.ucloudai.com:cache": "/mnt/cache",
-	}, *req.Metadata)
-	require.NotNil(t, req.VolumeMounts)
-	assert.Equal(t, []api.SandboxVolumeMount{{Name: "legacy", Path: "/mnt/legacy"}}, *req.VolumeMounts)
-}
-
-func TestCreateMount2OnlyUsesMetadata(t *testing.T) {
-	req := parseCreateFlags(t, "--mount2", "data:/mnt/data")
-
-	require.NotNil(t, req.Metadata)
-	assert.Equal(t, api.SandboxMetadata{"volume.v2.sandbox.ucloudai.com:data": "/mnt/data"}, *req.Metadata)
-	assert.Nil(t, req.VolumeMounts)
-}
-
-func TestCreateMount2RejectsInvalidValue(t *testing.T) {
-	for _, mount := range []string{"data", "", ":", "data:", ":/mnt/data", "data:relative/path", " : /mnt"} {
-		assert.Error(t, parseCreateFlagsErr(t, "--mount2", mount), "mount %q should be rejected", mount)
-	}
+func TestCreateRejectsRemovedMount2Flag(t *testing.T) {
+	assert.ErrorContains(t, parseCreateFlagsErr(t, "--mount2", "data:/data"), "unknown flag")
 }

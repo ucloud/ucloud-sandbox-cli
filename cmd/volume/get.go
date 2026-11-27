@@ -17,10 +17,14 @@ func (o *getOperation) Command() *cobra.Command {
 }
 
 func (o *getOperation) Run(ctx cmd.OperationContext) error {
-	vol, err := ctx.Client.Volumes().Get(ctx, ctx.Args[0])
+	id, err := parseVolumeID(ctx.Args[0])
+	if err != nil {
+		return err
+	}
+	vol, err := ctx.Client.Volumes().Get(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	return cmd.ShowJSON(vol)
+	return showVolume(ctx, vol)
 }

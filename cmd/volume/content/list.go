@@ -1,4 +1,4 @@
-package fs
+package content
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/v2/contentapi"
+	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
 )
 
 type listOperation struct{}
@@ -28,11 +28,11 @@ func (o *listOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
-	entries, err := content.ListDir(ctx, ctx.Args[1], 1)
+	entries, err := content.List(ctx, &contentapi.ListVolumeDirectoryParams{Path: &ctx.Args[1], Depth: new(int32(1))})
 	if err != nil {
 		return err
 	}
-	slices.SortFunc(entries, func(a, b contentapi.Entry) int {
+	slices.SortFunc(entries, func(a, b contentapi.EntryInfo) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 	w := tabwriter.NewWriter(ctx.Cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
@@ -46,11 +46,11 @@ func (o *listOperation) Run(ctx cmd.OperationContext) error {
 			kind = "l"
 		}
 		name := entry.Name
-		if entry.Type == contentapi.Symlink && entry.Target != nil {
-			name += " -> " + *entry.Target
+		if entry.Type == contentapi.Symlink && entry.SymlinkTarget != nil {
+			name += " -> " + *entry.SymlinkTarget
 		}
 		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%s\t%s\n",
-			kind+mode.String()[1:], entry.Uid, entry.Gid, entry.Size, entry.Mtime.Format("Jan _2 15:04"), name); err != nil {
+			kind+mode.String()[1:], entry.Uid, entry.Gid, entry.Size, entry.ModifiedTime.Format("Jan _2 15:04"), name); err != nil {
 			return err
 		}
 	}

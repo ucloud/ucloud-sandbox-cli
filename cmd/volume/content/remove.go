@@ -1,8 +1,9 @@
-package fs
+package content
 
 import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
 )
 
 type removeOperation struct{}
@@ -21,5 +22,5 @@ func (o *removeOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
-	return content.Remove(ctx, ctx.Args[1])
+	return content.Remove(ctx, &contentapi.DeleteVolumePathParams{Path: ctx.Args[1]})
 }

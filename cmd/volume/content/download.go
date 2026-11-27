@@ -1,4 +1,4 @@
-package fs
+package content
 
 import (
 	"io"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
 )
 
 type downloadOperation struct {
@@ -27,11 +28,12 @@ func (o *downloadOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
-	reader, err := content.ReadFile(ctx, ctx.Args[1])
+	response, err := content.ReadFile(ctx, &contentapi.ReadVolumeFileParams{Path: ctx.Args[1]})
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer response.Body.Close()
+	reader := response.Body
 
 	if o.file == "" {
 		_, err = io.Copy(ctx.Cmd.OutOrStdout(), reader)

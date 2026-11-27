@@ -1,10 +1,11 @@
-package fs
+package content
 
 import (
 	"encoding/json"
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
 )
 
 type statOperation struct{}
@@ -22,7 +23,7 @@ func (o *statOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
-	entry, err := content.Stat(ctx, ctx.Args[1])
+	entry, err := content.Stat(ctx, &contentapi.StatVolumePathParams{Path: ctx.Args[1]})
 	if err != nil {
 		return err
 	}

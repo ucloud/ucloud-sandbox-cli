@@ -200,13 +200,7 @@ ucloud-sandbox-cli sandbox create base \
   --mount <volume-name-2>:/cache
 ```
 
-V2 Volume 使用 `--mount2`，按名称挂载到沙箱内的绝对路径；可重复指定，也可与 `--mount` 一起使用。挂载前需将沙箱模板中的 envd 升级到 **0.9.0 或更高版本**，并使用升级后的模板创建沙箱：
-
-```bash
-ucloud-sandbox-cli sandbox create base \
-  --mount2 <v2-volume-name-1>:/data \
-  --mount2 <v2-volume-name-2>:/cache
-```
+新旧 Volume 均使用 `--mount`，详见下方 [Volume 管理](#volume-管理)。
 
 开启自动暂停/自动恢复后，沙箱在超时被暂停后，下次访问时会自动恢复运行：
 
@@ -399,109 +393,88 @@ ucloud-sandbox-cli sandbox create base \
 
 ## Volume 管理
 
-Volume v1 和 v2 的底层存储及资源分配方式不同：
+Volume 提供独立于沙箱生命周期的持久化存储。新 Volume 在原生 E2B v1 兼容接口的基础上扩展了**容量限制、容量用量查询和扩容**。通过 `volume`（简写 `vol`）管理 Volume，通过 `--mount` 挂载到沙箱。
 
-| 对比项 | Volume v1 | Volume v2 |
+### 新旧 Volume 的区别
+
+| 对比项 | 老 Volume | 新 Volume |
 | --- | --- | --- |
-| 底层存储 | 所有用户共享一个底层 NFS | 每个 Volume 对应一个托管于云平台的独立 NFS Volume |
-| 容量 | 所有用户共享 | 每个 Volume 拥有独立容量，可单独扩容 |
-| 带宽 | 所有用户共享 | 每个 Volume 拥有独立带宽 |
-| 管理命令 | `volume <command>` | `volume v2 <command>` |
-| 挂载参数 | `--mount <name>:/path` | `--mount2 <name>:/path` |
+| 容量限制 | 不返回容量限制相关字段 | 每个 Volume 有独立容量限制，默认 1 GiB |
+| 容量查询 | `list` 表格中容量显示为 `-`，JSON 中不含相关字段 | 返回总容量、已用容量和可用容量 |
+| 扩容 | 不支持 | 支持 `volume resize`，只能增大 |
+| 管理与挂载 | 继续使用 `volume` 和 `--mount` | 使用相同的 `volume` 和 `--mount` |
 
-### Volume v1
+老 Volume 仍然可以通过 `volume list` 和 `volume get` 查询，并继续按原来的方式挂载使用。是否返回容量字段用于区分新旧 Volume；缺失容量字段不代表容量为零。新创建的 Volume 都是带容量限制的 Volume，不再创建老 Volume。
 
-创建持久化 Volume：
+### 创建、查询、扩容与删除
 
-```bash
-ucloud-sandbox-cli vol create <name>
-```
-
-列出 Volume：
+容量参数 `--size-gib` 使用**正整数 GiB**（1 GiB = 1,073,741,824 字节）。创建时可省略，服务端默认分配 1 GiB：
 
 ```bash
+ucloud-sandbox-cli volume create data
+ucloud-sandbox-cli vol create datasets --size-gib 10
+
 ucloud-sandbox-cli vol list
+ucloud-sandbox-cli vol list --page 2 --limit 10
 ucloud-sandbox-cli vol list --format json
-```
-
-查看单个 Volume：
-
-```bash
 ucloud-sandbox-cli vol get <volume-id>
-```
 
-删除一个或多个 Volume：
+# 扩容到总容量 20 GiB，参数不是增加的容量
+ucloud-sandbox-cli vol resize <volume-id> --size-gib 20
 
-```bash
 ucloud-sandbox-cli vol delete <volume-id...>
 ```
 
-### Volume v2
+`list` 表格展示 `Total (GiB)`、`Used (GiB)` 和 `Available (GiB)`。`get` 和 `list --format json` 保留 API 返回的 `totalSizeGiB`、`usedSizeGiB`、`availableSizeGiB` 字段，其中已用和可用容量可以是小数。老 Volume 缺失的字段不会补成零。
 
-通过 `volume v2`（或 `vol v2`）管理云 NFS Volume，容量单位为 GiB。Basic 类型默认至少 500 GiB，Advanced 类型至少 100 GiB：
+`get`、`resize`、`delete` 和下面的 `content` 命令使用 Volume UUID；挂载使用 Volume **名称**。扩容后的总容量必须大于当前容量，不能缩容，也不能扩容老 Volume；创建和扩容受项目配额约束。运行中或已暂停的沙箱正在挂载的 Volume 不能删除。
+
+### 挂载 Volume
+
+新旧 Volume 都可以在创建沙箱时通过 `--mount <volume-name>:/absolute/path` 挂载。重复指定可以挂载多个 Volume：
 
 ```bash
-ucloud-sandbox-cli volume v2 create data --size-gib 500
-ucloud-sandbox-cli volume v2 create fast-data --size-gib 100 \
-  --extra-params '{"storageType":"Advanced"}' \
-  --idempotency-key create-fast-data
-
-ucloud-sandbox-cli volume v2 list
-ucloud-sandbox-cli volume v2 list --page 2 --limit 10 --format json
-ucloud-sandbox-cli volume v2 get <volume-id>
-ucloud-sandbox-cli volume v2 resize <volume-id> --size-gib 1000
-ucloud-sandbox-cli volume v2 delete <volume-id...>
+ucloud-sandbox-cli sandbox create base --mount data:/data
+ucloud-sandbox-cli sandbox create base \
+  --mount data:/data \
+  --mount datasets:/datasets
 ```
 
-`get`、`resize`、`delete` 使用 Volume UUID；创建沙箱时的 `--mount2` 使用 Volume 名称。扩容只支持增大容量。
+### 直接操作 Volume 内容
 
-#### 文件操作
+通过 `volume content`（简写 `vol ct`）调用独立的 **volumecontent API**，可以**绕过沙箱，直接读写 Volume 内的数据**，无需先创建、连接或挂载沙箱。CLI 使用当前配置的 API Key 访问内容服务。
 
-通过 `vol v2 fs` 直接操作 Volume 中的文件，使用 Volume UUID 和相对于 Volume 根目录的路径（`/` 表示根目录）：
+内容路径是相对于 Volume 根目录的路径，使用 `.` 表示根目录，例如 `directory/data.txt`。新版 API 不接受 `/data.txt` 这样的绝对路径、`..` 路径组件或 NUL 字节；符号链接的目标也必须在 Volume 内。这里的路径与沙箱内的挂载路径无关。
 
 ```bash
-# 创建目录
-ucloud-sandbox-cli vol v2 fs mkdir <volume-id> /directory
+# 创建目录；-p 同时创建缺失的父目录，并允许目标目录已存在
+ucloud-sandbox-cli volume content mkdir <volume-id> directory
+ucloud-sandbox-cli vol ct mkdir <volume-id> nested/directory -p
 
 # 上传本地文件，或从 stdin 读取（支持二进制数据）
-ucloud-sandbox-cli vol v2 fs upload <volume-id> /data.txt -f ./data.txt
-printf 'hello\n' | ucloud-sandbox-cli vol v2 fs upload <volume-id> /hello.txt
+ucloud-sandbox-cli vol ct upload <volume-id> directory/data.txt -f ./data.txt
+printf 'hello\n' | ucloud-sandbox-cli vol ct upload <volume-id> hello.txt
+
+# --force 创建缺失的父目录，并覆盖已存在的普通文件
+ucloud-sandbox-cli vol ct upload <volume-id> nested/data.txt -f ./data.txt --force
 
 # 下载到本地文件，或直接输出到 stdout
-ucloud-sandbox-cli vol v2 fs download <volume-id> /data.txt -f ./data.txt
-ucloud-sandbox-cli vol v2 fs download <volume-id> /data.txt > ./data.txt
+ucloud-sandbox-cli vol ct download <volume-id> directory/data.txt -f ./data.txt
+ucloud-sandbox-cli vol ct download <volume-id> directory/data.txt > ./data.txt
 
-# 列出目录、查看元数据、删除文件或目录
-ucloud-sandbox-cli vol v2 fs list <volume-id> /
-ucloud-sandbox-cli vol v2 fs ls <volume-id> /
-ucloud-sandbox-cli vol v2 fs stat <volume-id> /data.txt
-ucloud-sandbox-cli vol v2 fs rm <volume-id> /data.txt
-ucloud-sandbox-cli vol v2 fs remove <volume-id> /directory
+# 列目录、查看元数据、重命名、删除文件或目录
+ucloud-sandbox-cli vol ct list <volume-id> .
+ucloud-sandbox-cli vol ct ls <volume-id> directory
+ucloud-sandbox-cli vol ct stat <volume-id> directory/data.txt
+ucloud-sandbox-cli vol ct rename <volume-id> directory/data.txt directory/renamed.txt
+ucloud-sandbox-cli vol ct mv <volume-id> directory/renamed.txt hello.txt
+ucloud-sandbox-cli vol ct rm <volume-id> hello.txt
+ucloud-sandbox-cli vol ct remove <volume-id> directory
 ```
 
-`upload`、`download` 的 `-f`（`--file`）指定本地文件；不指定时分别使用 stdin、stdout，传输过程不向 stdout 输出提示信息。上传使用服务端默认创建规则：父目录必须存在，目标文件不能已存在。下载到本地文件时会覆盖已有内容。
+`upload`、`download` 的 `-f`（`--file`）指定本地文件；不指定时分别使用 stdin、stdout，传输过程不向 stdout 输出提示信息。默认上传要求父目录已存在、目标文件不存在；`--force` 可以创建父目录并覆盖普通文件，但不能覆盖目录或符号链接。下载到本地文件时会覆盖已有内容。
 
-`list`（别名 `ls`）按名称排序，以类似 `ls -l` 的格式显示权限、UID、GID、字节数、修改时间和名称；符号链接同时显示目标。`stat` 以 JSON 显示元数据。`remove`（别名 `rm`）递归删除目录及其内容。
-
-`mkdir` 创建目录，父目录必须存在，目标路径不能已存在。
-
-#### 挂载 Volume v2
-
-挂载 Volume v2 需要沙箱内的 **envd 0.9.0 或更高版本**。请先升级沙箱模板中的 envd，再使用升级后的模板创建沙箱。
-
-创建 Volume 后，在创建沙箱时通过 `--mount2 <volume-name>:<mount-path>` 指定 Volume 名称和沙箱内的绝对路径。例如，将上面创建的 `data` 挂载到 `/data`：
-
-```bash
-ucloud-sandbox-cli sandbox create <template> --mount2 data:/data
-```
-
-重复指定 `--mount2` 可以挂载多个 Volume，也可与 v1 的 `--mount` 一起使用。同一个 v2 Volume 名称重复指定时，以最后一次指定的路径为准：
-
-```bash
-ucloud-sandbox-cli sandbox create <template> \
-  --mount2 data:/data \
-  --mount2 fast-data:/fast-data
-```
+`list`（别名 `ls`）按名称排序，以类似 `ls -l` 的格式显示权限、UID、GID、字节数、修改时间和名称；符号链接同时显示目标。`stat` 以 JSON 显示元数据。`rename`（别名 `mv`）在同一 Volume 内移动或重命名路径。`remove`（别名 `rm`）递归删除目录及其内容。`mkdir` 默认要求父目录存在且目标不存在，使用 `-p` 可以创建多级目录。
 
 ## 模板构建管理
 
@@ -595,7 +568,7 @@ ucloud-sandbox-cli tpl delete --select
 
 ## 输出格式与分页
 
-以下列表命令支持同一组参数：`sandbox list`、`volume list`、`volume v2 list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`。
+以下列表命令支持同一组参数：`sandbox list`、`volume list`、`secret list`、`snapshot list`、`template list`、`template tag list`、`sandbox fs ls`。
 
 ```bash
 -f, --format string   输出格式，pretty 或 json（默认 pretty）

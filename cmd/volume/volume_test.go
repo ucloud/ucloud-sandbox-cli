@@ -3,10 +3,11 @@ package volume
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/list"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/api"
 )
 
 func TestListFlags(t *testing.T) {
@@ -39,31 +40,30 @@ func TestListRejectsAnUnknownFormat(t *testing.T) {
 }
 
 func TestToListedVolume(t *testing.T) {
-	row := toListedVolume(api.Volume{VolumeID: "vol-1", Name: "data"})
+	row := toListedVolume(api.Volume{VolumeID: uuid.MustParse(testID), Name: "data"})
 
-	assert.Equal(t, listedVolume{VolumeID: "vol-1", Name: "data"}, row)
+	assert.Equal(t, listedVolume{VolumeID: testID, Name: "data", TotalSizeGiB: "-", UsedSizeGiB: "-", AvailableSizeGiB: "-"}, row)
 }
 
 func TestCommandsAreRegistered(t *testing.T) {
-	names := map[string]bool{}
-	for _, c := range Command().Commands() {
-		names[c.Name()] = true
-	}
-
-	for _, name := range []string{"create", "get", "list", "delete", "v2"} {
-		assert.True(t, names[name], "volume %s is missing", name)
-	}
-	for _, name := range []string{"create", "get", "list", "delete", "resize"} {
-		c, _, err := Command().Find([]string{"v2", name})
-		require.NoError(t, err)
-		assert.Equal(t, name, c.Name())
-		assert.Equal(t, "volume v2 "+name, c.CommandPath())
-	}
-	for _, name := range []string{"upload", "download", "list", "ls", "mkdir", "remove", "rm", "stat"} {
-		c, remaining, err := Command().Find([]string{"v2", "fs", name})
+	root := Command()
+	for _, name := range []string{"create", "get", "list", "delete", "resize", "content"} {
+		c, remaining, err := root.Find([]string{name})
 		require.NoError(t, err)
 		assert.Empty(t, remaining)
-		assert.Equal(t, "volume v2 fs", c.Parent().CommandPath())
+		assert.Equal(t, name, c.Name())
+	}
+	for _, group := range []string{"content", "ct"} {
+		for _, name := range []string{"upload", "download", "list", "ls", "mkdir", "remove", "rm", "stat", "rename", "mv"} {
+			c, remaining, err := root.Find([]string{group, name})
+			require.NoError(t, err)
+			assert.Empty(t, remaining)
+			assert.Equal(t, "volume content", c.Parent().CommandPath())
+		}
+	}
+	for _, name := range []string{"v2", "fs"} {
+		_, _, err := root.Find([]string{name})
+		assert.Error(t, err)
 	}
 }
 
@@ -73,4 +73,13 @@ func TestDeleteNeedsAtLeastOneVolume(t *testing.T) {
 
 	assert.Error(t, c.Args(c, nil))
 	assert.NoError(t, c.Args(c, []string{"vol-1"}))
+}
+
+func TestCapacityZeroIsNotMissing(t *testing.T) {
+	row := toListedVolume(api.Volume{VolumeID: uuid.MustParse(testID), Name: "data",
+		TotalSizeGiB: new(int64(1)), UsedSizeGiB: new(float64(0)), AvailableSizeGiB: new(float64(1)),
+	})
+	assert.Equal(t, "1", row.TotalSizeGiB)
+	assert.Equal(t, "0", row.UsedSizeGiB)
+	assert.Equal(t, "1", row.AvailableSizeGiB)
 }

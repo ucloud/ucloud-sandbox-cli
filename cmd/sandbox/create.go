@@ -3,7 +3,6 @@ package sandbox
 import (
 	"encoding/json"
 	"fmt"
-	"path"
 	"regexp"
 	"strings"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/sandbox/commands"
 	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/secret"
-	volumev2 "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/v2"
 )
 
 type createOperation struct {
@@ -54,8 +52,6 @@ func (o *createOperation) Command() *cobra.Command {
 		"Seconds the sandbox lives for")
 	cmd.Flags().VarP(&volumeMountsValue{target: &o.req.VolumeMounts}, "mount", "",
 		"Volume to mount, as name:path")
-	cmd.Flags().Var(&volumeMountsV2Value{target: &o.req}, "mount2",
-		"V2 volume to mount, as name:/absolute/path (repeat for multiple volumes)")
 
 	cmd.Flags().BoolVarP(&o.dryRun, "dry-run", "", false, "Show create request")
 
@@ -358,33 +354,6 @@ func parseVolumeMount(s string) (api.SandboxVolumeMount, error) {
 }
 
 func (v *volumeMountsValue) Type() string {
-	return "volumeMount"
-}
-
-// V2 mounts are encoded by the SDK in metadata rather than volumeMounts.
-type volumeMountsV2Value struct {
-	target *api.NewSandbox
-	values []string
-}
-
-func (v *volumeMountsV2Value) String() string {
-	return strings.Join(v.values, ", ")
-}
-
-func (v *volumeMountsV2Value) Set(s string) error {
-	mount, err := parseVolumeMount(s)
-	if err != nil {
-		return err
-	}
-	if !path.IsAbs(mount.Path) {
-		return fmt.Errorf("invalid v2 volume %q: mount path must be absolute", s)
-	}
-	*v.target = volumev2.WithMount(*v.target, mount.Name, mount.Path)
-	v.values = append(v.values, mount.Name+":"+mount.Path)
-	return nil
-}
-
-func (v *volumeMountsV2Value) Type() string {
 	return "volumeMount"
 }
 

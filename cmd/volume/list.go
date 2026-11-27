@@ -1,12 +1,12 @@
 package volume
 
 import (
-	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/list"
-	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/api"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/api"
 )
 
 type listOperation struct {
@@ -28,15 +28,28 @@ func (o *listOperation) Command() *cobra.Command {
 
 // listedVolume is a display-friendly view of api.Volume for table rendering.
 type listedVolume struct {
-	VolumeID string `table_field:"Volume ID"`
-	Name     string `table_field:"Name"`
+	VolumeID         string `table_field:"Volume ID"`
+	Name             string `table_field:"Name"`
+	TotalSizeGiB     string `table_field:"Total (GiB)"`
+	UsedSizeGiB      string `table_field:"Used (GiB)"`
+	AvailableSizeGiB string `table_field:"Available (GiB)"`
 }
 
 func toListedVolume(v api.Volume) listedVolume {
-	return listedVolume{
-		VolumeID: v.VolumeID,
-		Name:     v.Name,
+	row := listedVolume{
+		VolumeID: v.VolumeID.String(), Name: v.Name,
+		TotalSizeGiB: "-", UsedSizeGiB: "-", AvailableSizeGiB: "-",
 	}
+	if v.TotalSizeGiB != nil {
+		row.TotalSizeGiB = strconv.FormatInt(*v.TotalSizeGiB, 10)
+	}
+	if v.UsedSizeGiB != nil {
+		row.UsedSizeGiB = strconv.FormatFloat(*v.UsedSizeGiB, 'f', -1, 64)
+	}
+	if v.AvailableSizeGiB != nil {
+		row.AvailableSizeGiB = strconv.FormatFloat(*v.AvailableSizeGiB, 'f', -1, 64)
+	}
+	return row
 }
 
 func (o *listOperation) Run(ctx cmd.OperationContext) error {
@@ -53,5 +66,5 @@ func (o *listOperation) Run(ctx cmd.OperationContext) error {
 
 	page := list.FromSlice(volumes, o.list.Page, o.list.Limit)
 
-	return list.Render(os.Stdout, page, o.list, toListedVolume, "No volumes found.")
+	return list.Render(ctx.Cmd.OutOrStdout(), page, o.list, toListedVolume, "No volumes found.")
 }

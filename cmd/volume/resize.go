@@ -3,6 +3,7 @@ package volume
 import (
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
+	"github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/api"
 )
 
 type resizeOperation struct {
@@ -12,10 +13,10 @@ type resizeOperation struct {
 func (o *resizeOperation) Command() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "resize <volume-id>",
-		Short: "Expand a v2 volume (shrinking is not supported)",
+		Short: "Expand a volume (legacy volumes and shrinking are not supported)",
 		Args:  cobra.ExactArgs(1),
 	}
-	c.Flags().Int64Var(&o.sizeGiB, "size-gib", 0, "Target capacity in GiB")
+	c.Flags().Int64Var(&o.sizeGiB, "size-gib", 0, "New total capacity in whole GiB")
 	c.MarkFlagRequired("size-gib")
 	return c
 }
@@ -28,9 +29,9 @@ func (o *resizeOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
-	vol, err := ctx.Client.VolumesV2().Resize(ctx, id, o.sizeGiB)
+	vol, err := ctx.Client.Volumes().Resize(ctx, id, api.ResizeVolumeRequest{TotalSizeGiB: o.sizeGiB})
 	if err != nil {
 		return err
 	}
-	return cmd.ShowJSON(vol)
+	return showVolume(ctx, vol)
 }
