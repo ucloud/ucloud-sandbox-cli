@@ -115,9 +115,13 @@ func snapshotSteps(leaked *idList) []benchmark.Step[*benchSandbox] {
 	}
 }
 
+// errNotAttempted marks the failure of a step that sent no request, because
+// a step it depends on did not succeed.
+var errNotAttempted = errors.New("not attempted")
+
 // notAttempted fails a step that depends on one that did not succeed.
 func notAttempted(reason string) error {
-	return errors.New("not attempted: " + reason)
+	return fmt.Errorf("%w: %s", errNotAttempted, reason)
 }
 
 // writeToken leaves a random token in the sandbox for the copies to carry.

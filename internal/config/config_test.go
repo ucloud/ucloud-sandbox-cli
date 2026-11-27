@@ -241,6 +241,26 @@ func TestNewClient_AppliesModifiers(t *testing.T) {
 }
 
 func TestResolveRegion(t *testing.T) {
-	assert.Equal(t, "cn-wlcb", ResolveRegion(&Config{}), "default region")
-	assert.Equal(t, "us-ca", ResolveRegion(&Config{Region: "us-ca"}))
+	tests := []struct {
+		name   string
+		cfg    Config
+		region string
+		ok     bool
+	}{
+		{"default region", Config{}, "cn-wlcb", true},
+		{"region", Config{Region: "us-ca"}, "us-ca", true},
+		{"region from domain", Config{Domain: "cn-sh.sandbox.ucloudai.com"}, "cn-sh", true},
+		{"domain wins, as for the API", Config{Region: "us-ca", Domain: "cn-sh.sandbox.ucloudai.com"}, "cn-sh", true},
+		{"custom domain with region", Config{Region: "us-ca", Domain: "sandbox.example.com"}, "us-ca", true},
+		{"custom domain alone", Config{Domain: "sandbox.example.com"}, "", false},
+		{"bare suffix", Config{Domain: "sandbox.ucloudai.com"}, "", false},
+		{"nested subdomain", Config{Domain: "a.b.sandbox.ucloudai.com"}, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			region, ok := ResolveRegion(&tt.cfg)
+			assert.Equal(t, tt.region, region)
+			assert.Equal(t, tt.ok, ok)
+		})
+	}
 }

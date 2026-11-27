@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/ucloud/ucloud-sandbox-cli/internal/benchmark"
+	"github.com/ucloud/ucloud-sandbox-cli/internal/config"
 )
 
 func parseHealth(t *testing.T, args ...string) *healthOperation {
@@ -24,7 +25,7 @@ func TestHealthDefaults(t *testing.T) {
 	assert.Equal(t, 1, op.count, "one sandbox by default")
 	assert.Equal(t, 1, op.concurrency)
 	assert.Equal(t, []string{"https://www.apple.com/library/test/success.html"}, op.urls)
-	assert.Empty(t, op.intranetHost, "resolved from the region")
+	assert.Empty(t, op.intranetURL, "resolved from the region")
 	assert.Equal(t, 8000, op.publicURLPort)
 	assert.NoError(t, op.validate())
 }
@@ -41,6 +42,7 @@ func TestHealthValidate(t *testing.T) {
 		{"port too high", []string{"--public-url-port", "70000"}, "--public-url-port"},
 		{"zero count", []string{"-n", "0"}, "--count"},
 		{"duplicate url", []string{"--url", "https://a.com", "--url", "https://a.com"}, "duplicate --url"},
+		{"intranet host without scheme", []string{"--intranet-url", "internal.s3-cn-sh2.ufileos.com"}, "--intranet-url"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,22 +56,22 @@ func TestHealthValidate(t *testing.T) {
 	assert.Equal(t, []string{"https://www.baidu.com", "http://example.com:8080/x"}, op.urls)
 	assert.NoError(t, op.validate())
 
+	assert.NoError(t, parseHealth(t, "--intranet-url", "http://10.0.0.1:8080/health").validate())
+
 	op = parseHealth(t, "--url", "https://example.com/api?ids=1,2")
 	assert.Equal(t, []string{"https://example.com/api?ids=1,2"}, op.urls, "a comma does not split the URL")
 	assert.NoError(t, op.validate())
 }
 
-func TestResolveIntranetHost(t *testing.T) {
-	assert.Equal(t, "internal.s3-cn-wlcb.ufileos.com", resolveIntranetHost("cn-wlcb", ""))
-	assert.Equal(t, "internal.s3-cn-sh2.ufileos.com", resolveIntranetHost("cn-sh", ""))
-	assert.Equal(t, "internal.s3-us-ca.ufileos.com", resolveIntranetHost("us-ca", ""))
-	assert.Equal(t, "internal.s3-us-den.ufileos.com", resolveIntranetHost("us-den", ""))
-	assert.Equal(t, "internal.s3-vn-sng.ufileos.com", resolveIntranetHost("vn-sng", ""))
+func TestIntranetURLFor(t *testing.T) {
+	assert.Equal(t, "https://internal.s3-cn-wlcb.ufileos.com/", intranetURLFor("cn-wlcb"))
+	assert.Equal(t, "https://internal.s3-cn-sh2.ufileos.com/", intranetURLFor("cn-sh"))
+	assert.Equal(t, "https://internal.s3-us-ca.ufileos.com/", intranetURLFor("us-ca"))
+	assert.Equal(t, "https://internal.s3-us-den.ufileos.com/", intranetURLFor("us-den"))
+	assert.Equal(t, "https://internal.s3-vn-sng.ufileos.com/", intranetURLFor("vn-sng"))
 
-	assert.Equal(t, "internal.s3-mars-1.ufileos.com", resolveIntranetHost("mars-1", ""),
+	assert.Equal(t, "https://internal.s3-mars-1.ufileos.com/", intranetURLFor("mars-1"),
 		"a new region follows the naming pattern")
-	assert.Equal(t, "10.0.0.1", resolveIntranetHost("cn-wlcb", "10.0.0.1"), "the flag wins")
-	assert.Equal(t, "10.0.0.1", resolveIntranetHost("mars-1", "10.0.0.1"))
 }
 
 func TestHealthSteps(t *testing.T) {
@@ -87,11 +89,11 @@ func TestHealthSteps(t *testing.T) {
 		"filesystem",
 		"internet https://www.baidu.com",
 		"internet https://example.com/path",
-		"intranet internal.s3-cn-wlcb.ufileos.com",
+		"intranet https://internal.s3-cn-wlcb.ufileos.com/",
 		"public-url 8000",
 		"pause",
 		"resume",
-	}, phases(op.steps(nil, "internal.s3-cn-wlcb.ufileos.com")))
+	}, phases(op.steps(nil, "https://internal.s3-cn-wlcb.ufileos.com/")))
 }
 
 func TestProbeCommand(t *testing.T) {
@@ -103,21 +105,34 @@ func TestProbeCommand(t *testing.T) {
 		probeCommand("http://x/'; rm -rf /"), "a quote in the URL cannot break out")
 }
 
-func TestPingCommand(t *testing.T) {
-	assert.Equal(t, "sudo -n ping -c 3 -W 2 'internal.s3-cn-wlcb.ufileos.com'", pingCommand("internal.s3-cn-wlcb.ufileos.com"))
-	assert.Equal(t, `sudo -n ping -c 3 -W 2 'x'"'"'; rm -rf /'`, pingCommand("x'; rm -rf /"),
-		"a quote in the host cannot break out")
+func TestIntranetProbeCommand(t *testing.T) {
+	const format = `-w '%{http_code} %{time_namelookup} %{time_connect} %{time_starttransfer}'`
+	assert.Equal(t,
+		`curl -sS -o /dev/null -m 10 `+format+` 'https://internal.s3-cn-sh2.ufileos.com/'`,
+		intranetProbeCommand("https://internal.s3-cn-sh2.ufileos.com/"))
+	assert.Equal(t,
+		`curl -sS -o /dev/null -m 10 `+format+` 'http://x/'"'"'; rm -rf /'`,
+		intranetProbeCommand("http://x/'; rm -rf /"), "a quote in the URL cannot break out")
 }
 
-func TestPingSummary(t *testing.T) {
-	out := `PING internal-cn-wlcb.ufileos.com (10.0.0.1) 56(84) bytes of data.
-
---- internal-cn-wlcb.ufileos.com ping statistics ---
-3 packets transmitted, 0 received, 100% packet loss, time 2034ms
-`
-	assert.Equal(t, "3 packets transmitted, 0 received, 100% packet loss, time 2034ms", pingSummary(out))
-	assert.Empty(t, pingSummary("ping: unknown host"))
-	assert.Empty(t, pingSummary(""))
+func TestParseIntranetProbe(t *testing.T) {
+	tests := []struct {
+		name, stdout, code, timeline string
+	}{
+		{"answered", "400 0.178443 0.178742 0.184301", "400", "resolved 178ms, connected 179ms, first byte 184ms"},
+		{"no connection", "000 5.012 0.000000 0.000000", "000", "resolved 5.012s, connected -, first byte -"},
+		{"name did not resolve", "000 0.000000 0.000000 0.000000", "000", "resolved -, connected -, first byte -"},
+		{"not curl's output", "curl: not found", "", ""},
+		{"empty", "", "", ""},
+		{"bad time", "200 x 0.1 0.2", "200", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, timeline := parseIntranetProbe(tt.stdout)
+			assert.Equal(t, tt.code, code)
+			assert.Equal(t, tt.timeline, timeline)
+		})
+	}
 }
 
 func TestCheckHTTPCode(t *testing.T) {
@@ -170,17 +185,17 @@ func healthPhases(t *testing.T, args ...string) []benchmark.Phase {
 	op := parseHealth(t, args...)
 	require.NoError(t, op.validate())
 	var out []benchmark.Phase
-	for _, s := range op.steps(nil, "internal.s3-cn-wlcb.ufileos.com") {
+	for _, s := range op.steps(nil, "https://internal.s3-cn-wlcb.ufileos.com/") {
 		out = append(out, s.Phase)
 	}
 	return out
 }
 
 func TestHealthSelectChecks(t *testing.T) {
-	assert.Equal(t, []benchmark.Phase{"internet " + defaultInternetURL, "intranet internal.s3-cn-wlcb.ufileos.com"},
+	assert.Equal(t, []benchmark.Phase{"internet " + defaultInternetURL, "intranet https://internal.s3-cn-wlcb.ufileos.com/"},
 		healthPhases(t, "--only", "internet,intranet"))
 
-	assert.Equal(t, []benchmark.Phase{"exec", "intranet internal.s3-cn-wlcb.ufileos.com"},
+	assert.Equal(t, []benchmark.Phase{"exec", "intranet https://internal.s3-cn-wlcb.ufileos.com/"},
 		healthPhases(t, "--only", "intranet", "--only", "exec"),
 		"checks run in their fixed order, whatever the order given")
 
@@ -188,7 +203,7 @@ func TestHealthSelectChecks(t *testing.T) {
 		"pause covers resume")
 
 	assert.Equal(t, []benchmark.Phase{
-		"exec", "filesystem", "internet " + defaultInternetURL, "intranet internal.s3-cn-wlcb.ufileos.com",
+		"exec", "filesystem", "internet " + defaultInternetURL, "intranet https://internal.s3-cn-wlcb.ufileos.com/",
 	}, healthPhases(t, "--skip", "pause,public-url"))
 }
 
@@ -215,4 +230,30 @@ func TestHealthValidateChecks(t *testing.T) {
 func TestHealthPublicURLNamesItsPort(t *testing.T) {
 	assert.Equal(t, []benchmark.Phase{"public-url 3000"},
 		healthPhases(t, "--only", "public-url", "--public-url-port", "3000"))
+}
+
+func TestHealthResolveIntranetURL(t *testing.T) {
+	cfg := func(region, domain string) *config.Config {
+		return &config.Config{Region: region, Domain: domain}
+	}
+
+	host, err := parseHealth(t).resolveIntranetURL(cfg("", "cn-sh.sandbox.ucloudai.com"))
+	require.NoError(t, err)
+	assert.Equal(t, "https://internal.s3-cn-sh2.ufileos.com/", host, "the region comes from the domain the API calls go to")
+
+	host, err = parseHealth(t).resolveIntranetURL(cfg("us-ca", ""))
+	require.NoError(t, err)
+	assert.Equal(t, "https://internal.s3-us-ca.ufileos.com/", host)
+
+	_, err = parseHealth(t).resolveIntranetURL(cfg("", "sandbox.example.com"))
+	require.Error(t, err, "a custom domain alone does not tell the region")
+	assert.Contains(t, err.Error(), "--intranet-url")
+
+	host, err = parseHealth(t, "--intranet-url", "http://10.0.0.1:8080/").resolveIntranetURL(cfg("", "sandbox.example.com"))
+	require.NoError(t, err)
+	assert.Equal(t, "http://10.0.0.1:8080/", host, "the flag wins")
+
+	host, err = parseHealth(t, "--skip", "intranet").resolveIntranetURL(cfg("", "sandbox.example.com"))
+	require.NoError(t, err, "the region is not needed when the intranet check is skipped")
+	assert.Empty(t, host)
 }

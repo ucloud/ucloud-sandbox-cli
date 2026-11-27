@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,9 +30,9 @@ const (
 	phaseResume     benchmark.Phase = "resume"
 )
 
-// intranetHostTemplate builds a region's internal US3 (ufile) endpoint, the
-// host its sandboxes should reach over the intranet.
-const intranetHostTemplate = "internal.s3-%s.ufileos.com"
+// intranetURLTemplate builds the URL of a region's internal US3 (ufile)
+// endpoint, which its sandboxes should reach over the intranet.
+const intranetURLTemplate = "https://internal.s3-%s.ufileos.com/"
 
 // intranetRegionAliases lists the regions whose US3 endpoint is named after
 // a region code of its own.
@@ -67,7 +68,7 @@ type healthOperation struct {
 	runOptions
 
 	urls          []string
-	intranetHost  string
+	intranetURL   string
 	publicURLPort int
 
 	skip []string
@@ -84,8 +85,8 @@ func (o *healthOperation) Command() *cobra.Command {
 	o.addFlags(c, 1, "Seconds each sandbox lives for, bounding any sandbox a failed kill leaves behind")
 	c.Flags().StringArrayVarP(&o.urls, "url", "", []string{defaultInternetURL},
 		"Public URL the sandbox must reach; repeat to check several")
-	c.Flags().StringVarP(&o.intranetHost, "intranet-host", "", "",
-		"Intranet host the sandbox must reach by ping (default: the region's internal US3 endpoint)")
+	c.Flags().StringVarP(&o.intranetURL, "intranet-url", "", "",
+		"Intranet URL the sandbox must get an HTTP response from, whatever its status (default: the region's internal US3 endpoint)")
 	c.Flags().IntVarP(&o.publicURLPort, "public-url-port", "", 8000,
 		"Sandbox port the public URL check serves HTTP on")
 
@@ -102,8 +103,7 @@ func (o *healthOperation) validate() error {
 	}
 	seen := make(map[string]bool, len(o.urls))
 	for _, raw := range o.urls {
-		u, err := url.Parse(raw)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		if !isHTTPURL(raw) {
 			return fmt.Errorf("invalid --url %q: must be an http or https URL", raw)
 		}
 		// Every URL is a phase of its own, named after it.
@@ -111,6 +111,9 @@ func (o *healthOperation) validate() error {
 			return fmt.Errorf("duplicate --url %q", raw)
 		}
 		seen[raw] = true
+	}
+	if o.intranetURL != "" && !isHTTPURL(o.intranetURL) {
+		return fmt.Errorf("invalid --intranet-url %q: must be an http or https URL", o.intranetURL)
 	}
 	if o.publicURLPort < 1 || o.publicURLPort > 65535 {
 		return fmt.Errorf("invalid --public-url-port %d: must be between 1 and 65535", o.publicURLPort)
@@ -131,6 +134,12 @@ func (o *healthOperation) validate() error {
 	return nil
 }
 
+// isHTTPURL reports whether raw is an absolute http or https URL.
+func isHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
 // selected reports whether --skip and --only leave check in.
 func (o *healthOperation) selected(check string) bool {
 	if len(o.only) > 0 {
@@ -149,29 +158,42 @@ func (o *healthOperation) Run(ctx cmd.OperationContext) error {
 		return err
 	}
 
-	intranetHost := resolveIntranetHost(config.ResolveRegion(ctx.Config), o.intranetHost)
+	intranetURL, err := o.resolveIntranetURL(ctx.Config)
+	if err != nil {
+		return err
+	}
 
 	return o.run(ctx, sdk, runSpec{
 		name:  "health",
-		steps: o.steps(sdk.Transport(), intranetHost),
+		steps: o.steps(sdk.Transport(), intranetURL),
 	})
 }
 
-// resolveIntranetHost returns the intranet host to check: the one given by
-// flag, or the region's own US3 endpoint.
-func resolveIntranetHost(region, override string) string {
-	if override != "" {
-		return override
+// resolveIntranetURL returns the URL the intranet check requests, or "" when
+// the check is not selected. Without --intranet-url it is the US3 endpoint of
+// the region the API calls go to, which has to be known.
+func (o *healthOperation) resolveIntranetURL(cfg *config.Config) (string, error) {
+	if !o.selected("intranet") || o.intranetURL != "" {
+		return o.intranetURL, nil
 	}
+	region, ok := config.ResolveRegion(cfg)
+	if !ok {
+		return "", fmt.Errorf("cannot tell the region from domain %q to check its intranet; set the region or pass --intranet-url", cfg.Domain)
+	}
+	return intranetURLFor(region), nil
+}
+
+// intranetURLFor returns the URL of region's internal US3 endpoint.
+func intranetURLFor(region string) string {
 	if alias, ok := intranetRegionAliases[region]; ok {
 		region = alias
 	}
-	return fmt.Sprintf(intranetHostTemplate, region)
+	return fmt.Sprintf(intranetURLTemplate, region)
 }
 
 // steps returns the steps of the selected checks, in the order of
 // healthChecks.
-func (o *healthOperation) steps(t *transport.Client, intranetHost string) []benchmark.Step[*benchSandbox] {
+func (o *healthOperation) steps(t *transport.Client, intranetURL string) []benchmark.Step[*benchSandbox] {
 	var internet []benchmark.Step[*benchSandbox]
 	for _, raw := range o.urls {
 		internet = append(internet, probeStep(benchmark.Phase("internet "+raw), raw))
@@ -182,7 +204,7 @@ func (o *healthOperation) steps(t *transport.Client, intranetHost string) []benc
 		"exec":       {execStep("echo ok", "")},
 		"filesystem": {{Phase: phaseFilesystem, Run: checkFilesystem}},
 		"internet":   internet,
-		"intranet":   {pingStep(benchmark.Phase("intranet "+intranetHost), intranetHost)},
+		"intranet":   {intranetStep(benchmark.Phase("intranet "+intranetURL), intranetURL)},
 		"public-url": {{Phase: benchmark.Phase(fmt.Sprintf("public-url %d", port)), Run: func(ctx context.Context, sbx *benchSandbox) error {
 			return checkPublicURL(ctx, t, sbx, port)
 		}}},
@@ -203,9 +225,13 @@ func (o *healthOperation) steps(t *transport.Client, intranetHost string) []benc
 
 // checkFilesystem writes a random token to a file through envd, reads it
 // back and compares.
+//
+// The path is fixed: the random token in the content is what catches a
+// mismatch, while a random path would put a different name in the error of
+// every iteration, so the same failure would never group into one report row.
 func checkFilesystem(ctx context.Context, sbx *benchSandbox) error {
 	token := randomToken()
-	path := "/tmp/ucloud-sandbox-health-" + token
+	const path = "/tmp/ucloud-sandbox-health"
 
 	fs := sbx.Files()
 	if _, err := fs.Write(ctx, path, token); err != nil {
@@ -264,51 +290,67 @@ func checkHTTPCode(stdout string) error {
 	}
 }
 
-// pingStep checks that the sandbox reaches host with ICMP echo: the name has
-// to resolve and at least one of the pings has to be answered.
-func pingStep(phase benchmark.Phase, host string) benchmark.Step[*benchSandbox] {
+// intranetStep checks that the sandbox gets an HTTP response from target.
+// Its status does not matter: any response shows the sandbox reaches the
+// service, and the default endpoint, US3, answers an anonymous request with
+// 400. A failure tells how far the request got, so a slow name lookup can be
+// told from a connection that never came.
+func intranetStep(phase benchmark.Phase, target string) benchmark.Step[*benchSandbox] {
 	return benchmark.Step[*benchSandbox]{
 		Phase: phase,
 		Run: func(ctx context.Context, sbx *benchSandbox) error {
-			result, err := sbx.run(ctx, pingCommand(host), "")
-			if err == nil {
-				return nil
-			}
-			// A ping nobody answers explains itself on stdout, in the packet
-			// loss summary, and leaves stderr empty.
+			// A failed command still comes with what curl printed.
+			result, err := sbx.run(ctx, intranetProbeCommand(target), "")
+			var code, timeline string
 			if result != nil {
-				if summary := pingSummary(result.Stdout); summary != "" && strings.TrimSpace(result.Stderr) == "" {
-					return fmt.Errorf("ping %s: %s", host, summary)
-				}
+				code, timeline = parseIntranetProbe(result.Stdout)
 			}
-			return fmt.Errorf("ping %s: %w", host, err)
+			if timeline != "" {
+				timeline = " (" + timeline + ")"
+			}
+			if err != nil {
+				return fmt.Errorf("%s: %w%s", target, err, timeline)
+			}
+			if code == "" || code == "000" {
+				return fmt.Errorf("%s: no HTTP response%s", target, timeline)
+			}
+			return nil
 		},
 	}
 }
 
-// pingCount and pingWaitSec shape the intranet ping: how many echo requests
-// are sent, and how many seconds each one waits for its reply.
-const (
-	pingCount   = 3
-	pingWaitSec = 2
-)
-
-// pingCommand returns the ping invocation checking host. ping exits 0 once
-// any reply arrives and non-zero when none does. It runs through sudo, since
-// the sandbox's default user may not be allowed to send ICMP; -n makes sudo
-// fail at once rather than wait for a password nobody will type.
-func pingCommand(host string) string {
-	return fmt.Sprintf("sudo -n ping -c %d -W %d %s", pingCount, pingWaitSec, shellQuote(host))
+// intranetProbeCommand returns the curl invocation requesting target. It
+// prints the status code, then the times, in seconds since the start, at
+// which the name resolved, the connection was made and the first byte of the
+// response arrived. curl prints them even when the request fails, with 000
+// and 0 for what never happened.
+func intranetProbeCommand(target string) string {
+	return fmt.Sprintf("curl -sS -o /dev/null -m %d -w '%%{http_code} %%{time_namelookup} %%{time_connect} %%{time_starttransfer}' %s",
+		probeTimeoutSec, shellQuote(target))
 }
 
-// pingSummary returns the packet loss line of ping's output, or "".
-func pingSummary(stdout string) string {
-	for line := range strings.SplitSeq(stdout, "\n") {
-		if strings.Contains(line, "packet loss") {
-			return strings.TrimSpace(line)
+// parseIntranetProbe splits what intranetProbeCommand printed into the status
+// code and a description of when each stage of the request was reached, "" if
+// the output is not what it prints.
+func parseIntranetProbe(stdout string) (code, timeline string) {
+	fields := strings.Fields(stdout)
+	if len(fields) != 4 {
+		return "", ""
+	}
+	stages := []string{"resolved", "connected", "first byte"}
+	parts := make([]string, 0, len(stages))
+	for i, stage := range stages {
+		sec, err := strconv.ParseFloat(fields[i+1], 64)
+		switch {
+		case err != nil:
+			return fields[0], ""
+		case sec == 0:
+			parts = append(parts, stage+" -")
+		default:
+			parts = append(parts, fmt.Sprintf("%s %s", stage, time.Duration(sec*float64(time.Second)).Round(time.Millisecond)))
 		}
 	}
-	return ""
+	return fields[0], strings.Join(parts, ", ")
 }
 
 // shellQuote quotes s as a single word for the shell envd runs commands in.
@@ -321,7 +363,8 @@ func shellQuote(s string) string {
 // `sandbox host` reports, checking the gateway's inbound path.
 func checkPublicURL(ctx context.Context, t *transport.Client, sbx *benchSandbox, port int) error {
 	token := randomToken()
-	dir := "/tmp/ucloud-sandbox-health-www-" + token
+	// Fixed, like the filesystem check's path, so failures group.
+	const dir = "/tmp/ucloud-sandbox-health-www"
 
 	if _, err := sbx.Files().Write(ctx, dir+"/health", token); err != nil {
 		return fmt.Errorf("write served file: %w", err)
@@ -430,7 +473,7 @@ func checkPause(ctx context.Context, sbx *benchSandbox) error {
 // resumed sandbox is known to work and not only to be reported running.
 func checkResume(ctx context.Context, sbx *benchSandbox) error {
 	if !sbx.paused {
-		return errors.New("not attempted: the sandbox did not pause")
+		return notAttempted("the sandbox did not pause")
 	}
 
 	resumed, err := sbx.svc.Connect(ctx, sbx.ID(), api.ConnectSandbox{Timeout: sbx.timeout})
