@@ -3,6 +3,7 @@ module github.com/ucloud/ucloud-sandbox-cli
 go 1.27.0
 
 require (
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/distribution/reference v0.6.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.19.0
@@ -13,7 +14,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/stretchr/testify v1.12.1
-	github.com/ucloud/ucloud-sandbox-sdk-go v0.5.1-0.20261127065741-193a354263d3
+	github.com/ucloud/ucloud-sandbox-sdk-go v0.5.1-0.20261127074349-e618966baecf
 	golang.org/x/mod v0.40.0
 	golang.org/x/term v0.44.0
 	google.golang.org/protobuf v1.36.12
@@ -22,7 +23,6 @@ require (
 require (
 	connectrpc.com/connect v1.21.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

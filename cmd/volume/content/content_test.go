@@ -42,7 +42,7 @@ func operationContext(t *testing.T, op cmd.Operation, args []string, handler fun
 			status, body := handler(r)
 			return &http.Response{
 				StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}},
-				Body: io.NopCloser(strings.NewReader(body)), Request: r,
+				Body: io.NopCloser(strings.NewReader(body)), ContentLength: int64(len(body)), Request: r,
 			}, nil
 		})},
 	})
@@ -74,21 +74,30 @@ func TestUpload(t *testing.T) {
 				return http.StatusOK, entryJSON
 			})
 			ctx.Cmd.SetIn(bytes.NewReader(data))
+			progress := new(bytes.Buffer)
+			ctx.Cmd.SetErr(progress)
 			require.NoError(t, op.Run(ctx))
 			assert.True(t, called)
 			assert.Empty(t, out.String())
+			if fromFile {
+				assert.Contains(t, progress.String(), "Uploading")
+				assert.Contains(t, progress.String(), "100%")
+			} else {
+				assert.Empty(t, progress.String())
+			}
 		})
 	}
 }
 
 func TestDownload(t *testing.T) {
-	data := string([]byte{0, 1, 255, '\n', 'x'})
 	for _, toFile := range []bool{false, true} {
 		t.Run(map[bool]string{false: "stdout", true: "file"}[toFile], func(t *testing.T) {
+			data := "hello 世界\n"
 			op := &downloadOperation{}
 			args := []string{testID, "dir/a b.txt"}
 			path := filepath.Join(t.TempDir(), "output.bin")
 			if toFile {
+				data = string([]byte{0, 1, 255, '\n', 'x'})
 				require.NoError(t, os.WriteFile(path, []byte("long old contents"), 0600))
 				args = append(args, "--file", path)
 			}
@@ -100,6 +109,8 @@ func TestDownload(t *testing.T) {
 				assert.Equal(t, args[1], r.URL.Query().Get("path"))
 				return http.StatusOK, data
 			})
+			progress := new(bytes.Buffer)
+			ctx.Cmd.SetErr(progress)
 			require.NoError(t, op.Run(ctx))
 			assert.True(t, called)
 			if toFile {
@@ -107,8 +118,11 @@ func TestDownload(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, data, string(body))
 				assert.Empty(t, out.String())
+				assert.Contains(t, progress.String(), "Downloading")
+				assert.Contains(t, progress.String(), "100%")
 			} else {
 				assert.Equal(t, data, out.String())
+				assert.Empty(t, progress.String())
 			}
 		})
 	}
@@ -138,12 +152,14 @@ func TestList(t *testing.T) {
 		directory := strings.NewReplacer(`"name":"a.txt"`, `"name":"z-dir"`, `"type":"file"`, `"type":"directory"`, `"mode":420`, `"mode":493`).Replace(entryJSON)
 		link := strings.Replace(entryJSON, `"type":"file"`, `"type":"symlink","symlinkTarget":"a.txt"`, 1)
 		link = strings.Replace(link, `"name":"a.txt"`, `"name":"b-link"`, 1)
-		return http.StatusOK, "[" + directory + "," + link + "," + entryJSON + "]"
+		file := strings.Replace(entryJSON, `"size":5`, `"size":26489513`, 1)
+		return http.StatusOK, "[" + directory + "," + link + "," + file + "]"
 	})
 	require.NoError(t, op.Run(ctx))
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 3)
-	assert.Equal(t, []string{"-rw-r--r--", "1000", "1001", "5", "Nov", "20", "01:02", "a.txt"}, strings.Fields(lines[0]))
+	assert.Equal(t, []string{"-rw-r--r--", "1000", "1001", "25", "MiB", "Nov", "20", "01:02", "a.txt"}, strings.Fields(lines[0]))
+	assert.Contains(t, lines[1], "5 B")
 	assert.True(t, strings.HasPrefix(lines[1], "lrw-r--r--"))
 	assert.True(t, strings.HasSuffix(lines[1], "b-link -> a.txt"))
 	assert.True(t, strings.HasPrefix(lines[2], "drwxr-xr-x"))
@@ -210,7 +226,7 @@ func operations() []cmd.Operation {
 
 func TestInvalidArgumentsDoNotSendRequests(t *testing.T) {
 	for _, op := range operations() {
-		for _, args := range [][]string{{"invalid", "."}, {testID, ""}, {testID, "/"}, {testID, "../secret"}, {testID, "dir/../secret"}, {testID, "a\x00b"}} {
+		for _, args := range [][]string{{"invalid", "."}, {testID, ""}, {testID, "../secret"}, {testID, "dir/../secret"}, {testID, "/dir/../secret"}, {testID, "a\x00b"}} {
 			ctx, _ := operationContext(t, op, args, func(*http.Request) (int, string) {
 				t.Fatal("invalid arguments must not send requests")
 				return 0, ""
@@ -309,11 +325,73 @@ func TestRename(t *testing.T) {
 
 func TestRenameRejectsInvalidDestination(t *testing.T) {
 	op := &renameOperation{}
-	for _, destination := range []string{"", "/outside", "dir/../outside"} {
+	for _, destination := range []string{"", "dir/../outside", "/dir/../outside"} {
 		ctx, _ := operationContext(t, op, []string{testID, "a.txt", destination}, func(*http.Request) (int, string) {
 			t.Fatal("invalid destination must not send requests")
 			return 0, ""
 		})
 		require.Error(t, op.Run(ctx))
+	}
+}
+
+func TestAbsoluteContentPaths(t *testing.T) {
+	for _, tt := range []struct {
+		op       cmd.Operation
+		path     string
+		method   string
+		endpoint string
+	}{
+		{&uploadOperation{}, "/dir/a b.txt", http.MethodPut, "/files"},
+		{&downloadOperation{}, "/dir/a b.txt", http.MethodGet, "/files"},
+		{&listOperation{}, "/dir", http.MethodGet, "/directories"},
+		{&listOperation{}, "/", http.MethodGet, "/directories"},
+		{&mkdirOperation{}, "/dir/new", http.MethodPost, "/directories"},
+		{&removeOperation{}, "/dir/a.txt", http.MethodDelete, "/paths"},
+		{&statOperation{}, "/dir/a.txt", http.MethodGet, "/paths"},
+		{&statOperation{}, "/", http.MethodGet, "/paths"},
+	} {
+		t.Run(tt.op.Command().Name()+tt.path, func(t *testing.T) {
+			called := false
+			ctx, _ := operationContext(t, tt.op, []string{testID, tt.path}, func(r *http.Request) (int, string) {
+				called = true
+				assert.Equal(t, tt.method, r.Method)
+				assert.Equal(t, contentPrefix+tt.endpoint, r.URL.Path)
+				if r.Method == http.MethodPost {
+					var body map[string]any
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+					assert.Equal(t, tt.path, body["path"])
+				} else {
+					assert.Equal(t, tt.path, r.URL.Query().Get("path"))
+				}
+				if tt.method == http.MethodDelete {
+					return http.StatusNoContent, ""
+				}
+				if _, ok := tt.op.(*listOperation); ok {
+					return http.StatusOK, "[]"
+				}
+				return http.StatusOK, entryJSON
+			})
+			ctx.Cmd.SetIn(strings.NewReader("data"))
+			require.NoError(t, tt.op.Run(ctx))
+			assert.True(t, called)
+		})
+	}
+}
+
+func TestRenameAbsolutePaths(t *testing.T) {
+	for _, paths := range [][]string{{"/dir/a.txt", "/dir/b.txt"}, {"dir/a.txt", "/dir/b.txt"}, {"/dir/a.txt", "dir/b.txt"}} {
+		op := &renameOperation{}
+		called := false
+		ctx, _ := operationContext(t, op, append([]string{testID}, paths...), func(r *http.Request) (int, string) {
+			called = true
+			assert.Equal(t, http.MethodPost, r.Method)
+			assert.Equal(t, contentPrefix+"/paths/rename", r.URL.Path)
+			var body map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal(t, map[string]any{"sourcePath": paths[0], "destinationPath": paths[1]}, body)
+			return http.StatusOK, entryJSON
+		})
+		require.NoError(t, op.Run(ctx))
+		assert.True(t, called)
 	}
 }

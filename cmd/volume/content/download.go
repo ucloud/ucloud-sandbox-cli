@@ -1,12 +1,15 @@
 package content
 
 import (
+	"fmt"
 	"io"
 	"os"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
+	"golang.org/x/term"
 )
 
 type downloadOperation struct {
@@ -36,17 +39,30 @@ func (o *downloadOperation) Run(ctx cmd.OperationContext) error {
 	reader := response.Body
 
 	if o.file == "" {
-		_, err = io.Copy(ctx.Cmd.OutOrStdout(), reader)
+		out := ctx.Cmd.OutOrStdout()
+		if file, ok := out.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
+			return writeText(out, reader)
+		}
+		_, err = io.Copy(out, reader)
 		return err
 	}
 	file, err := os.Create(o.file)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(file, reader)
+	progress := newTransferProgress(ctx.Cmd.ErrOrStderr(), response.ContentLength, "Downloading")
+	defer func() {
+		progress.Exit()
+		fmt.Fprintln(ctx.Cmd.ErrOrStderr())
+	}()
+	tracked := progressbar.NewReader(reader, progress)
+	_, err = io.Copy(file, &tracked)
 	closeErr := file.Close()
 	if err != nil {
 		return err
 	}
-	return closeErr
+	if closeErr != nil {
+		return closeErr
+	}
+	return progress.Finish()
 }

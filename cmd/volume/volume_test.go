@@ -54,7 +54,7 @@ func TestCommandsAreRegistered(t *testing.T) {
 		assert.Equal(t, name, c.Name())
 	}
 	for _, group := range []string{"content", "ct"} {
-		for _, name := range []string{"upload", "download", "list", "ls", "mkdir", "remove", "rm", "stat", "rename", "mv"} {
+		for _, name := range []string{"upload", "download", "list", "ls", "mkdir", "remove", "rm", "stat", "rename", "mv", "connect"} {
 			c, remaining, err := root.Find([]string{group, name})
 			require.NoError(t, err)
 			assert.Empty(t, remaining)

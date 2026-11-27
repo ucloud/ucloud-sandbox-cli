@@ -444,7 +444,7 @@ ucloud-sandbox-cli sandbox create base \
 
 通过 `volume content`（简写 `vol ct`）调用独立的 **volumecontent API**，可以**绕过沙箱，直接读写 Volume 内的数据**，无需先创建、连接或挂载沙箱。CLI 使用当前配置的 API Key 访问内容服务。
 
-内容路径是相对于 Volume 根目录的路径，使用 `.` 表示根目录，例如 `directory/data.txt`。新版 API 不接受 `/data.txt` 这样的绝对路径、`..` 路径组件或 NUL 字节；符号链接的目标也必须在 Volume 内。这里的路径与沙箱内的挂载路径无关。
+内容路径支持相对路径和绝对路径，均限定在当前 Volume 内。单次命令中，`directory/data.txt` 和 `/directory/data.txt` 指向同一个文件，`.` 和 `/` 都表示 Volume 根目录。API 返回的路径会规范化为相对路径。路径不能包含 `..` 组件或 NUL 字节，符号链接的目标也必须在 Volume 内。这里的绝对路径以 Volume 根目录为起点，与本地文件系统或沙箱内的挂载路径无关。
 
 ```bash
 # 创建目录；-p 同时创建缺失的父目录，并允许目标目录已存在
@@ -458,23 +458,55 @@ printf 'hello\n' | ucloud-sandbox-cli vol ct upload <volume-id> hello.txt
 # --force 创建缺失的父目录，并覆盖已存在的普通文件
 ucloud-sandbox-cli vol ct upload <volume-id> nested/data.txt -f ./data.txt --force
 
-# 下载到本地文件，或直接输出到 stdout
+# 下载到本地文件，或将内容输出到 stdout（管道和重定向支持二进制）
 ucloud-sandbox-cli vol ct download <volume-id> directory/data.txt -f ./data.txt
 ucloud-sandbox-cli vol ct download <volume-id> directory/data.txt > ./data.txt
 
 # 列目录、查看元数据、重命名、删除文件或目录
-ucloud-sandbox-cli vol ct list <volume-id> .
+ucloud-sandbox-cli vol ct list <volume-id> /
 ucloud-sandbox-cli vol ct ls <volume-id> directory
 ucloud-sandbox-cli vol ct stat <volume-id> directory/data.txt
+ucloud-sandbox-cli vol ct stat <volume-id> /directory/data.txt
 ucloud-sandbox-cli vol ct rename <volume-id> directory/data.txt directory/renamed.txt
 ucloud-sandbox-cli vol ct mv <volume-id> directory/renamed.txt hello.txt
 ucloud-sandbox-cli vol ct rm <volume-id> hello.txt
 ucloud-sandbox-cli vol ct remove <volume-id> directory
 ```
 
-`upload`、`download` 的 `-f`（`--file`）指定本地文件；不指定时分别使用 stdin、stdout，传输过程不向 stdout 输出提示信息。默认上传要求父目录已存在、目标文件不存在；`--force` 可以创建父目录并覆盖普通文件，但不能覆盖目录或符号链接。下载到本地文件时会覆盖已有内容。
+`upload`、`download` 的 `-f`（`--file`）指定本地文件；指定时会在 stderr 显示传输进度，已知文件大小时显示百分比，未知大小时显示已传输字节数。进度信息不会写入 stdout。不指定 `-f` 时，上传从 stdin 读取，下载输出到 stdout，且不显示进度条。只有 stdout 是终端时，下载才会逐块检查内容：遇到二进制或非 UTF-8 内容会停止并提示使用 `-f <local-file>`，此前已输出的文本会保留。输出到管道或重定向文件时不检查，直接流式传输，支持任意二进制数据。
 
-`list`（别名 `ls`）按名称排序，以类似 `ls -l` 的格式显示权限、UID、GID、字节数、修改时间和名称；符号链接同时显示目标。`stat` 以 JSON 显示元数据。`rename`（别名 `mv`）在同一 Volume 内移动或重命名路径。`remove`（别名 `rm`）递归删除目录及其内容。`mkdir` 默认要求父目录存在且目标不存在，使用 `-p` 可以创建多级目录。
+默认上传要求父目录已存在、目标文件不存在；`--force` 可以创建父目录并覆盖普通文件，但不能覆盖目录或符号链接。下载到本地文件时会覆盖已有内容。
+
+`list`（别名 `ls`）按名称排序，以类似 `ls -l` 的格式显示权限、UID、GID、文件大小（自动使用 B、KiB、MiB 等单位）、修改时间和名称；符号链接同时显示目标。`stat` 以 JSON 显示元数据。`rename`（别名 `mv`）在同一 Volume 内移动或重命名路径。`remove`（别名 `rm`）递归删除目录及其内容。`mkdir` 默认要求父目录存在且目标不存在，使用 `-p` 可以创建多级目录。
+
+#### 交互式文件操作
+
+使用 `volume content connect <volume-id>`（简写 `vol ct connect <volume-id>`）进入临时命令行，无需启动沙箱：
+
+```text
+$ ucloud-sandbox-cli vol ct connect <volume-id>
+/ > ls
+dir0  xxx
+/ > cd dir0
+/dir0 > cat file.0
+hello world
+/dir0 > mkdir data
+/dir0 > rm data
+/dir0 > cd ..
+/ > exit
+```
+
+支持 `ls [path]`、`ll [path]`、`cd [path]`、`cat <path>`、`mkdir <path>`、`rm <path>` 和 `exit`。`ls` 默认按名称排序列出当前目录；`ll` 使用类似 `ls -l` 的详细格式，显示权限、UID、GID、可读文件大小、修改时间和名称，符号链接同时显示目标。`ls` 和 `ll` 都可以指定目录路径。`cd` 不带参数返回根目录。可以使用相对路径、`..` 和以 `/` 开头的 Volume 内路径，例如 `cd /dir0`；`/` 始终表示当前 Volume 的根目录。带空格的路径使用引号或反斜杠转义，例如 `cat "my file.txt"`。
+
+交互模式中，相对路径以当前目录为起点，绝对路径始终以 Volume 根目录为起点。例如在 `/dir0` 下：
+
+```text
+/dir0 > cat file.txt
+```
+
+读取 `/dir0/file.txt`，而 `cat /file.txt` 读取 Volume 根目录下的 `/file.txt`。交互模式会先解析当前目录、`.` 和 `..`，再将路径发送给 API。
+
+`cat` 逐块检查文本内容；遇到二进制或非 UTF-8 内容时会停止输出并提示使用 `ucloud-sandbox-cli vol ct download <volume-id> <path> -f <local-file>` 下载，仍留在交互模式。`rm` 会递归删除目标文件或目录。单条命令失败后仍留在交互模式，输入 `exit` 或按 Ctrl+D 退出。终端中支持行编辑和本次会话的命令历史。
 
 ## 模板构建管理
 

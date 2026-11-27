@@ -15,7 +15,7 @@ func Command() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "content",
 		Aliases: []string{"ct"},
-		Short:   "Manage volume files directly without a sandbox (paths are relative; . is the root)",
+		Short:   "Manage volume files directly (relative or absolute volume paths)",
 	}
 	c.AddCommand(cmd.Build(&uploadOperation{}))
 	c.AddCommand(cmd.Build(&downloadOperation{}))
@@ -24,6 +24,7 @@ func Command() *cobra.Command {
 	c.AddCommand(cmd.Build(&removeOperation{}))
 	c.AddCommand(cmd.Build(&statOperation{}))
 	c.AddCommand(cmd.Build(&renameOperation{}))
+	c.AddCommand(cmd.Build(&connectOperation{}))
 	return c
 }
 
@@ -33,8 +34,8 @@ func open(ctx cmd.OperationContext) (*volumecontent.Content, error) {
 		return nil, fmt.Errorf("invalid volume ID %q: expected UUID: %w", ctx.Args[0], err)
 	}
 	for _, value := range ctx.Args[1:] {
-		if value == "" || strings.HasPrefix(value, "/") || strings.ContainsRune(value, 0) {
-			return nil, fmt.Errorf("invalid volume path %q: use a relative path; . denotes the root", value)
+		if value == "" || strings.ContainsRune(value, 0) {
+			return nil, fmt.Errorf("invalid volume path %q: path must not be empty or contain NUL bytes", value)
 		}
 		for _, part := range strings.Split(value, "/") {
 			if part == ".." {

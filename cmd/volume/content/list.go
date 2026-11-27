@@ -2,11 +2,13 @@ package content
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"slices"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	contentapi "github.com/ucloud/ucloud-sandbox-sdk-go/pkg/volume/content/api"
@@ -32,10 +34,14 @@ func (o *listOperation) Run(ctx cmd.OperationContext) error {
 	if err != nil {
 		return err
 	}
+	return renderEntries(ctx.Cmd.OutOrStdout(), entries)
+}
+
+func renderEntries(out io.Writer, entries []contentapi.EntryInfo) error {
 	slices.SortFunc(entries, func(a, b contentapi.EntryInfo) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	w := tabwriter.NewWriter(ctx.Cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	for _, entry := range entries {
 		mode := fs.FileMode(entry.Mode).Perm()
 		kind := "-"
@@ -49,8 +55,8 @@ func (o *listOperation) Run(ctx cmd.OperationContext) error {
 		if entry.Type == contentapi.Symlink && entry.SymlinkTarget != nil {
 			name += " -> " + *entry.SymlinkTarget
 		}
-		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%s\t%s\n",
-			kind+mode.String()[1:], entry.Uid, entry.Gid, entry.Size, entry.ModifiedTime.Format("Jan _2 15:04"), name); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\t%s\n",
+			kind+mode.String()[1:], entry.Uid, entry.Gid, humanize.IBytes(uint64(max(entry.Size, 0))), entry.ModifiedTime.Format("Jan _2 15:04"), name); err != nil {
 			return err
 		}
 	}

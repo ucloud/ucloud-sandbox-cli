@@ -1,8 +1,10 @@
 package content
 
 import (
+	"fmt"
 	"os"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd"
 	"github.com/ucloud/ucloud-sandbox-cli/cmd/flags"
@@ -31,14 +33,31 @@ func (o *uploadOperation) Run(ctx cmd.OperationContext) error {
 		return err
 	}
 	reader := ctx.Cmd.InOrStdin()
+	var progress *progressbar.ProgressBar
 	if o.file != "" {
 		file, err := os.Open(o.file)
 		if err != nil {
 			return err
 		}
 		defer file.Close()
-		reader = file
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return fmt.Errorf("%s: cannot upload a directory", o.file)
+		}
+		progress = newTransferProgress(ctx.Cmd.ErrOrStderr(), info.Size(), "Uploading")
+		defer func() {
+			progress.Exit()
+			fmt.Fprintln(ctx.Cmd.ErrOrStderr())
+		}()
+		tracked := progressbar.NewReader(file, progress)
+		reader = &tracked
 	}
 	_, err = content.WriteFile(ctx, &contentapi.WriteVolumeFileParams{Path: ctx.Args[1], Force: o.force}, reader)
+	if err == nil && progress != nil {
+		return progress.Finish()
+	}
 	return err
 }
