@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"cmp"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -110,7 +111,7 @@ func buildReport(
 
 			failed[p.Phase]++
 
-			key := errorKey{phase: p.Phase, message: normalizeMessage(p.Err.Error(), r.SandboxID)}
+			key := errorKey{phase: p.Phase, message: normalizeMessage(p.Err, r.SandboxID)}
 			if errorCounts[key] == 0 {
 				errorOrder = append(errorOrder, key)
 			}
@@ -154,12 +155,21 @@ func buildReport(
 // sandboxPlaceholder stands in for the sandbox ID in a normalized message.
 const sandboxPlaceholder = "<sandbox>"
 
+// urlErrorPattern matches the request half of the message net/http puts in
+// front of the error of a failed request: the verb and the quoted URL. The
+// URL names the sandbox and the request, which the phase and the sandbox ID
+// already tell, and its length pushes the cause off the end of the message
+// column. Any verb matches, since every request the benchmark makes can fail.
+var urlErrorPattern = regexp.MustCompile(`\w+ "https?://[^"]*": `)
+
 // normalizeMessage prepares an error message for grouping and display. The
-// iteration's sandbox ID, which turns up in hosts such as
+// request URL is dropped, since it is long and says nothing the phase does
+// not, the iteration's sandbox ID, which turns up in hosts such as
 // "49983-<id>.<domain>", is replaced by a placeholder so the same failure in
 // different sandboxes groups together, and runs of whitespace, newlines
 // included, collapse to one space so the message fits on one table row.
-func normalizeMessage(msg, sandboxID string) string {
+func normalizeMessage(err error, sandboxID string) string {
+	msg := urlErrorPattern.ReplaceAllString(err.Error(), "")
 	if sandboxID != "" {
 		msg = strings.ReplaceAll(msg, sandboxID, sandboxPlaceholder)
 	}

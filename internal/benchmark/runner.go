@@ -248,10 +248,15 @@ func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Opt
 	}
 	result.SandboxID = sbx.ID()
 
+	// untimedConnect is the connection setup time of the untimed steps. They
+	// get no entry of their own, but their time is part of the total, so this
+	// is too.
+	var untimedConnect time.Duration
+
 	for _, step := range opts.Steps {
 		run := func(ctx context.Context) error { return step.Run(ctx, sbx) }
 		if step.Untimed {
-			result.runUntimed(ctx, step.Phase, run)
+			untimedConnect += result.runUntimed(ctx, step.Phase, run)
 		} else {
 			result.timePhase(ctx, step.Phase, run)
 		}
@@ -265,7 +270,7 @@ func runIteration[S Sandbox](ctx context.Context, create CreateFunc[S], opts Opt
 	}
 
 	if result.Succeeded() {
-		var connect time.Duration
+		connect := untimedConnect
 		for _, p := range result.Phases {
 			connect += p.Connect
 		}
@@ -294,11 +299,14 @@ func (r *IterationResult) timePhase(ctx context.Context, phase Phase, run func(c
 	return nil
 }
 
-// runUntimed runs an untimed step, recording only its error.
-func (r *IterationResult) runUntimed(ctx context.Context, phase Phase, run func(context.Context) error) {
-	if err := run(ctx); err != nil {
+// runUntimed runs an untimed step, recording only its error. It returns the
+// time the step spent obtaining HTTP connections.
+func (r *IterationResult) runUntimed(ctx context.Context, phase Phase, run func(context.Context) error) time.Duration {
+	traced, conn := withConnTrace(ctx)
+	if err := run(traced); err != nil {
 		r.fail(phase, err)
 	}
+	return conn.Total()
 }
 
 // fail records the error of a phase, and the sandboxes it leaked.

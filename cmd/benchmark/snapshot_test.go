@@ -200,6 +200,7 @@ func TestSnapshotStepsNotAttempted(t *testing.T) {
 		err := run()
 		require.Error(t, err, name)
 		assert.True(t, strings.HasPrefix(err.Error(), "not attempted: "), "%s: %v", name, err)
+		assert.ErrorIs(t, err, errNotAttempted, name)
 	}
 
 	assert.NoError(t, killCopies(ctx, sbx), "nothing to clean up")
@@ -267,12 +268,28 @@ func TestRunViewSnapshotCleanup(t *testing.T) {
 	assert.Contains(t, out, "1 snapshot(s) failed; the service may still have taken some of them.")
 	assert.Contains(t, out, "snapshots whose names contain bench-run-1- in: ucloud-sandbox-cli snapshot list")
 
+	failure := func(phase benchmark.Phase, err error) benchmark.IterationResult {
+		return benchmark.IterationResult{Phases: []benchmark.PhaseResult{{Phase: phase, Err: err}}}
+	}
 	copies := newRunView("run-1", "system/base", 1, 300, benchmark.Report{
-		Phases: []benchmark.PhaseReport{{Phase: phaseRestore, Failed: 1}, {Phase: phaseFork, Failed: 2}},
+		Phases: []benchmark.PhaseReport{{Phase: phaseRestore, Failed: 2}, {Phase: phaseFork, Failed: 2}},
+		Iterations: []benchmark.IterationResult{
+			failure(phaseRestore, errors.New("HTTP 500")),
+			failure(phaseRestore, notAttempted("no snapshot was taken")),
+			failure(phaseFork, errors.New("timeout")),
+			failure(phaseFork, errors.New("timeout")),
+		},
 	})
 	out = render(copies)
-	assert.Contains(t, out, "3 restore(s) or fork(s) failed; the service may still have started some of those sandboxes.")
+	assert.Contains(t, out, "3 restore(s) or fork(s) failed; the service may still have started some of those sandboxes.",
+		"a restore that was never attempted started nothing")
 	assert.Contains(t, out, "Clean them up with: ucloud-sandbox-cli sandbox kill --all -m benchmark=run-1")
+
+	notSent := newRunView("run-1", "system/base", 1, 300, benchmark.Report{
+		Phases:     []benchmark.PhaseReport{{Phase: phaseSnapshot}, {Phase: phaseRestore, Failed: 1}},
+		Iterations: []benchmark.IterationResult{failure(phaseRestore, notAttempted("no snapshot was taken"))},
+	})
+	assert.NotContains(t, render(notSent), "restore(s) or fork(s) failed")
 }
 
 func TestWriteHeaderSnapshots(t *testing.T) {

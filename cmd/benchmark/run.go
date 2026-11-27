@@ -37,6 +37,7 @@ type runOptions struct {
 	concurrency int
 	timeout     int32
 	format      string
+	output      string
 	breakdown   bool
 }
 
@@ -49,6 +50,8 @@ func (o *runOptions) addFlags(c *cobra.Command, defaultCount int, timeoutUsage s
 	c.Flags().IntVarP(&o.concurrency, "concurrency", "c", 1, "Number of iterations in flight at once")
 	c.Flags().Int32VarP(&o.timeout, "timeout", "", 300, timeoutUsage)
 	c.Flags().StringVarP(&o.format, "format", "f", list.FormatPretty, "Output format (pretty, json)")
+	c.Flags().StringVarP(&o.output, "output", "o", "",
+		"Also write the JSON report to this file, whatever --format prints")
 	c.Flags().BoolVarP(&o.breakdown, "breakdown", "", false,
 		"Show each phase's full latency, split into connection setup (DNS, dial, TLS) and service time")
 }
@@ -104,18 +107,18 @@ func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runS
 
 	// The first Ctrl+C stops new iterations and waits for the ones in flight
 	// to finish; restoring the default handling lets a second one force the
-	// process out. finished is closed before the deferred stop runs, so a run
-	// that ends normally is not reported as interrupted.
+	// process out.
 	finished := make(chan struct{})
 	defer close(finished)
-	go func() {
-		select {
-		case <-runCtx.Done():
-			stop()
-			fmt.Fprintf(os.Stderr, "\nInterrupted: waiting for in-flight iterations to finish (Ctrl+C again to force quit, then clean up with: %s)...\n", cleanup)
-		case <-finished:
+	go reportInterruption(runCtx, finished, stop, os.Stderr, cleanup)
+
+	// A path that cannot be written is reported before the first sandbox is
+	// created, rather than after the whole run.
+	if o.output != "" {
+		if err := checkReportFile(o.output); err != nil {
+			return err
 		}
-	}()
+	}
 
 	o.writeHeader(os.Stderr, spec, runID)
 
@@ -155,7 +158,41 @@ func (o *runOptions) run(ctx cmd.OperationContext, sdk *client.Client, spec runS
 		return err
 	}
 
+	// The file is written after the report is printed, and even when
+	// iterations failed, so the run's results are never lost to a write that
+	// goes wrong at the end.
+	if o.output != "" {
+		if err := view.writeJSONFile(o.output); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Report saved to %s\n", o.output)
+	}
+
 	return exitError(report)
+}
+
+// reportInterruption waits for ctx to be cancelled and, unless finished is
+// closed first, restores the default signal handling, so a second Ctrl+C
+// quits at once, and announces how to clean up after the run.
+func reportInterruption(ctx context.Context, finished <-chan struct{}, stop func(), w io.Writer, cleanup string) {
+	select {
+	case <-ctx.Done():
+	case <-finished:
+		return
+	}
+
+	// A run can finish in the same instant its context is cancelled, leaving
+	// both channels ready for the select above to pick between at random. A
+	// run that closed finished before it could announce anything was not
+	// interrupted.
+	select {
+	case <-finished:
+		return
+	default:
+	}
+
+	stop()
+	fmt.Fprintf(w, "\nInterrupted: waiting for in-flight iterations to finish (Ctrl+C again to force quit, then clean up with: %s)...\n", cleanup)
 }
 
 // writeHeader describes the run about to start. The cleanup command is given

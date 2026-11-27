@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -203,6 +205,7 @@ func TestLifecycleViewPretty(t *testing.T) {
 	assert.Contains(t, out, "Benchmark run-1 completed: template system/base, concurrency 2")
 	assert.Contains(t, out, "Iterations: 3/3 started, 2 succeeded, 1 failed")
 	assert.Contains(t, out, "Elapsed: 4s, rate: 0.50 sandbox/s")
+	assert.Contains(t, out, "Latency per phase, split into connection setup (connect) and service time (service):\n+")
 	assert.Contains(t, out, "| create    | 2         | 0      | 1.5s  | 1s  | 1s  | 2s    | 2s    | 2s    |")
 	assert.Contains(t, out, "|   connect | -         | -      | 100ms | 0s  | 0s  | 200ms | 200ms | 200ms |")
 	assert.Contains(t, out, "|   service | -         | -      | 1.4s  | 1s  | 1s  | 1.8s  | 1.8s  | 1.8s  |")
@@ -225,8 +228,105 @@ func TestRunViewShowsServiceTimeByDefault(t *testing.T) {
 	// latency (1.5s), and nothing is broken out under it.
 	assert.Contains(t, out, "| create | 2         | 0      | 1.4s | 1s  | 1s  | 1.8s | 1.8s | 1.8s |")
 	assert.Contains(t, out, "| exec   | 0         | 1      | -    | -   | -   | -    | -    | -    |")
-	assert.NotContains(t, out, "connect")
-	assert.NotContains(t, out, "service")
+	assert.Contains(t, out, "Service time per phase, excluding connection setup (DNS, dial, TLS); --breakdown shows the full latency:\n+")
+	assert.NotContains(t, out, "| connect")
+	assert.NotContains(t, out, "| service")
+}
+
+func TestOutputFlag(t *testing.T) {
+	op := parseLifecycle(t)
+	assert.Empty(t, op.output, "no report file by default")
+
+	op = parseLifecycle(t, "-o", "/tmp/report.json")
+	assert.Equal(t, "/tmp/report.json", op.output)
+	assert.NoError(t, op.validate(), "the path is checked when it is written")
+
+	assert.Equal(t, "/tmp/report.json", parseLifecycle(t, "--output", "/tmp/report.json").output)
+}
+
+func TestReportInterruptionAnnounces(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var b strings.Builder
+	stopped := false
+	reportInterruption(ctx, make(chan struct{}), func() { stopped = true }, &b, "cleanup-cmd")
+
+	assert.True(t, stopped, "the default signal handling is restored, so a second Ctrl+C quits")
+	assert.Contains(t, b.String(), "Interrupted: waiting for in-flight iterations to finish")
+	assert.Contains(t, b.String(), "cleanup-cmd")
+}
+
+func TestReportInterruptionSilentWhenRunFinished(t *testing.T) {
+	// Both channels are ready, as when a run finishes in the instant its
+	// context is cancelled: the run was not interrupted.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	finished := make(chan struct{})
+	close(finished)
+
+	var b strings.Builder
+	stopped := false
+	reportInterruption(ctx, finished, func() { stopped = true }, &b, "cleanup-cmd")
+
+	assert.Empty(t, b.String())
+	assert.False(t, stopped)
+}
+
+func TestReportInterruptionSilentWithoutCancellation(t *testing.T) {
+	finished := make(chan struct{})
+	close(finished)
+
+	var b strings.Builder
+	reportInterruption(context.Background(), finished, func() {}, &b, "cleanup-cmd")
+
+	assert.Empty(t, b.String())
+}
+
+func TestCheckReportFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.json")
+	require.NoError(t, checkReportFile(path))
+	_, err := os.Stat(path)
+	require.NoError(t, err, "the file is created up front")
+
+	assert.NoError(t, checkReportFile(path), "an existing file is fine")
+
+	err = checkReportFile(filepath.Join(t.TempDir(), "missing", "report.json"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "report file")
+}
+
+func TestRunViewWritesJSONFile(t *testing.T) {
+	r := sampleReport()
+	r.Iterations = []benchmark.IterationResult{{Seq: 1, SandboxID: "sbx-1"}}
+	path := filepath.Join(t.TempDir(), "report.json")
+
+	require.NoError(t, newRunView("run-1", "system/base", 2, 300, r).writeJSONFile(path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(data, &decoded), "the file holds one JSON document")
+	assert.Equal(t, "run-1", decoded["run_id"])
+	phases := decoded["phases"].([]any)
+	require.Len(t, phases, 2)
+	assert.InDelta(t, 1500, phases[0].(map[string]any)["avg_ms"], 1e-9, "the summary is in the file too")
+	require.Len(t, decoded["iterations"].([]any), 1)
+
+	// The document is the one --format json prints.
+	var stdout []byte
+	v := newRunView("run-1", "system/base", 2, 300, r)
+	stdout, err = json.MarshalIndent(v, "", "  ")
+	require.NoError(t, err)
+	assert.JSONEq(t, string(stdout), string(data))
+}
+
+func TestRunViewWriteJSONFileReportsBadPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "report.json")
+	err := newRunView("run-1", "system/base", 1, 300, benchmark.Report{}).writeJSONFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write report")
 }
 
 func TestBreakdownFlag(t *testing.T) {

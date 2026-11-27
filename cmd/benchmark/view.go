@@ -1,8 +1,12 @@
 package benchmark
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +51,10 @@ type runView struct {
 	// breakdown shows every phase's full latency in the pretty table, with its
 	// connect and service rows under it, rather than its service time alone.
 	breakdown bool
+
+	// copyStartsFailed counts the restores and forks that failed after their
+	// request was sent, and so may have started a sandbox all the same.
+	copyStartsFailed int
 }
 
 // phaseView is the statistics of one phase. Its latencies cover the whole
@@ -178,6 +186,8 @@ func newRunView(runID, template string, concurrency int, timeoutSec int32, r ben
 		v.Iterations = append(v.Iterations, newIterationView(it))
 	}
 
+	v.copyStartsFailed = failedRequests(r.Iterations, phaseRestore, phaseFork)
+
 	return v
 }
 
@@ -214,6 +224,30 @@ type errorRow struct {
 	Message string `table_field:"Message"`
 }
 
+// checkReportFile checks that path can be written, creating it if it does not
+// exist. It runs before a benchmark starts, so a wrong path fails in the first
+// second instead of after the whole run.
+func checkReportFile(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return fmt.Errorf("report file: %w", err)
+	}
+	return f.Close()
+}
+
+// writeJSONFile writes the view to path as the same JSON document --format
+// json prints, so a run can show its table and keep its samples at once.
+func (v runView) writeJSONFile(path string) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+	return nil
+}
+
 // writePretty writes the view as a summary followed by ASCII tables.
 func (v runView) writePretty(w io.Writer) error {
 	status := "completed"
@@ -225,6 +259,14 @@ func (v runView) writePretty(w io.Writer) error {
 	fmt.Fprintf(w, "Iterations: %d/%d started, %d succeeded, %d failed\n", v.Started, v.Requested, v.Succeeded, v.Failed)
 	fmt.Fprintf(w, "Elapsed: %s, rate: %s sandbox/s\n\n",
 		formatMs(v.ElapsedMs), strconv.FormatFloat(v.Rate, 'f', 2, 64))
+
+	// The JSON output reports the full latency under the same names, so say
+	// which one the table shows.
+	if v.breakdown {
+		fmt.Fprintln(w, "Latency per phase, split into connection setup (connect) and service time (service):")
+	} else {
+		fmt.Fprintln(w, "Service time per phase, excluding connection setup (DNS, dial, TLS); --breakdown shows the full latency:")
+	}
 
 	// By default a phase shows its service time: its latency less the time
 	// spent obtaining HTTP connections (DNS, dial, TLS), which depends on the
@@ -297,7 +339,7 @@ func (v runView) writeCleanup(w io.Writer) {
 	}
 
 	// Restoring and forking start sandboxes too, the same way.
-	if failed := v.phaseFailed(phaseRestore) + v.phaseFailed(phaseFork); failed > 0 {
+	if failed := v.copyStartsFailed; failed > 0 {
 		fmt.Fprintf(w, "\n%d restore(s) or fork(s) failed; the service may still have started some of those sandboxes.\n", failed)
 		hint = "Clean them up with"
 	}
@@ -323,6 +365,21 @@ func (v runView) phaseFailed(phase benchmark.Phase) int {
 		}
 	}
 	return 0
+}
+
+// failedRequests counts the failures of phases that got as far as sending
+// their request. A step left out because one before it failed sent nothing,
+// so it cannot have started anything on the service.
+func failedRequests(iterations []benchmark.IterationResult, phases ...benchmark.Phase) int {
+	n := 0
+	for _, it := range iterations {
+		for _, p := range it.Phases {
+			if p.Err != nil && slices.Contains(phases, p.Phase) && !errors.Is(p.Err, errNotAttempted) {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // writeSnapshotCleanup tells the user about the snapshots the run may have

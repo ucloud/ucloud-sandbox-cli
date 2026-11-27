@@ -469,13 +469,25 @@ func TestOptionsPhases(t *testing.T) {
 func TestNormalizeMessage(t *testing.T) {
 	assert.Equal(t,
 		"command exited with code 127: bash: nope: command not found",
-		normalizeMessage("command exited with code 127: bash: nope: command not found\n", "sbx-1"))
+		normalizeMessage(errors.New("command exited with code 127: bash: nope: command not found\n"), "sbx-1"))
 	assert.Equal(t,
 		"line one line two",
-		normalizeMessage("  line one\n\tline two\r\n", ""))
+		normalizeMessage(errors.New("  line one\n\tline two\r\n"), ""))
 	assert.Equal(t,
-		`Post "https://49983-<sandbox>.example.com/process.Process/Start": dial tcp: i/o timeout`,
-		normalizeMessage(`Post "https://49983-ibx7k2.example.com/process.Process/Start": dial tcp: i/o timeout`, "ibx7k2"))
+		"dial tcp: i/o timeout",
+		normalizeMessage(errors.New(`Post "https://49983-ibx7k2.example.com/process.Process/Start": dial tcp: i/o timeout`), "ibx7k2"),
+		"the request URL is dropped")
+	// Delete, which kill and snapshot-delete use, is dropped too.
+	assert.Equal(t,
+		"context deadline exceeded",
+		normalizeMessage(errors.New(`Delete "https://api.cn-sh.sandbox.ucloudai.com/sandboxes/sbx": context deadline exceeded`), ""))
+
+	// The URL is dropped inside a wrapped message too, which keeps its prefix
+	// and its cause.
+	assert.Equal(t,
+		"write /tmp/ucloud-sandbox-health: net/http: TLS handshake timeout",
+		normalizeMessage(fmt.Errorf("write %s: %w", "/tmp/ucloud-sandbox-health",
+			errors.New(`Post "https://49983-ibx7k2.cn-sh.sandbox.ucloudai.com/files?path=%2Ftmp%2Fucloud-sandbox-health": net/http: TLS handshake timeout`)), "ibx7k2"))
 }
 
 func TestRunGroupsErrorsAcrossSandboxes(t *testing.T) {
@@ -701,4 +713,27 @@ func TestRunRecordsUntimedStepOnlyWhenItFails(t *testing.T) {
 	assert.Equal(t, []string{"create", "work", "after", "kill", "total"}, phaseNames(run(nil)))
 	assert.Equal(t, []string{"create", "work", "cleanup!", "after", "kill"}, phaseNames(run(errors.New("HTTP 500"))),
 		"a failed untimed step shows up where it ran")
+}
+
+func TestRunTotalCountsConnectOfUntimedSteps(t *testing.T) {
+	const connect = 20 * time.Millisecond
+
+	svc := &fakeService{}
+	report := Run(context.Background(), svc.create, Options[*fakeSandbox]{
+		Count:       1,
+		Concurrency: 1,
+		Steps: []Step[*fakeSandbox]{{
+			Phase:   "cleanup",
+			Untimed: true,
+			Run: func(ctx context.Context, _ *fakeSandbox) error {
+				simulateConnect(ctx, connect)
+				return nil
+			},
+		}},
+	})
+	require.Equal(t, 1, report.Succeeded)
+
+	total := phaseReport(t, report, PhaseTotal)
+	assert.GreaterOrEqual(t, total.Connect.Min, connect, "an untimed step's connection setup is not service time")
+	assert.Less(t, total.Service.Max, connect)
 }
